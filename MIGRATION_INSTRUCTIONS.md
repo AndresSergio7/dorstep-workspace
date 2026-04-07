@@ -3,10 +3,12 @@
 ## Cambios realizados
 
 ### 1. Campos de prioridad y fecha de entrega en pendientes
+
 - Se agregó el campo `priority` (baja, media, alta) a la tabla `action_items`
 - Se agregó el campo `due_date` (fecha de entrega) a la tabla `action_items`
 
 ### 2. Arreglo del campo attendees en meetings
+
 - Se cambió el tipo de `attendees` de array a text para evitar el error "malformed array literal"
 - Ahora se guarda como texto separado por comas
 
@@ -40,11 +42,10 @@ supabase db push
 Después de ejecutar las migraciones, verifica que:
 
 1. La tabla `action_items` tenga las columnas:
-   - `priority` (tipo: text, nullable, con check constraint)
-   - `due_date` (tipo: date, nullable)
-
+  - `priority` (tipo: text, nullable, con check constraint)
+  - `due_date` (tipo: date, nullable)
 2. La tabla `meetings` tenga:
-   - `attendees` (tipo: text, no array)
+  - `attendees` (tipo: text, no array)
 
 ## Cambios en el código
 
@@ -55,3 +56,4 @@ Los siguientes archivos fueron modificados para soportar estos cambios:
 - `src/app/tasks/page.tsx` - Vista de tareas con prioridad y fecha de entrega
 - `src/types/index.ts` - Tipos actualizados
 - Migraciones SQL en `supabase/migrations/`
+
