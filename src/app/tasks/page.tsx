@@ -44,7 +44,7 @@ export default function TasksPage() {
       setLoadError(error.message)
       setItems([])
     } else {
-      setItems((data as Row[]) ?? [])
+      setItems((data as unknown as Row[]) ?? [])
     }
     setLoading(false)
   }, [])

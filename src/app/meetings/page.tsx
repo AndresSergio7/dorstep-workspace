@@ -30,7 +30,8 @@ export default function MeetingsPage() {
         supabase.from('clients').select('id, name').order('name'),
       ])
       if (cancelled) return
-      setMeetings((mRes.data as MeetingRow[]) ?? [])
+      const rows = (mRes.data ?? []) as unknown as MeetingRow[]
+      setMeetings(rows)
       setClients(cRes.data ?? [])
       setLoading(false)
     })()
