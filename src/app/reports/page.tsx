@@ -20,17 +20,14 @@ function buildReport(csvText: string, title: string, period: string): string {
     vals.push(cur.trim())
     return vals.map(v => v.replace(/^"|"$/g, '').trim())
   }
-
   const rawLines: string[] = []
   let buf = '', inQuote = false
-  for (const ch of csvText.trim()) {
+  for (const ch of (csvText + '\n')) {
     if (ch === '"') inQuote = !inQuote
-    else if (ch === '\n' && !inQuote) { rawLines.push(buf.replace(/\r$/, '')); buf = ''; continue }
+    else if (ch === '\n' && !inQuote) { if (buf) rawLines.push(buf.replace(/\r$/, '')); buf = ''; continue }
     buf += ch
   }
-  if (buf) rawLines.push(buf.replace(/\r$/, ''))
-
-  const headers = splitLine(rawLines[0])
+  const headers = splitLine(rawLines[0] ?? '')
   const rows = rawLines.slice(1).map(line => {
     const vals = splitLine(line)
     const obj: Record<string, string> = {}
@@ -38,293 +35,294 @@ function buildReport(csvText: string, title: string, period: string): string {
     return obj
   }).filter(r => r['Summary'])
 
-  // ── AUTO-CLASSIFY TIPO DE ERROR ────────────────────────────────────────────
-  const TIPO_PATTERNS: [string, RegExp][] = [
-    ['Error en Citas',   /cita|appointment|agenda|schedul/i],
-    ['WhatsApp',         /whatsapp|wha[ts]/i],
-    ['Campaña',          /campa[ñn]/i],
-    ['Leads/CRM',        /lead|crm/i],
-    ['Entrenamiento IA', /\bia\b|entrenamiento|training|modelo|bot\b/i],
-    ['Reset',            /reset|reinici|restart/i],
-    ['Llamadas',         /llamada|call|tel[eé]fono/i],
-    ['Comportamiento',   /comportamiento|conduct|behavior/i],
-    ['Información',      /informa|dato/i],
-  ]
-  const tipoColKey = headers.find(h => /tipo/i.test(h))
-  function getTipo(row: Record<string, string>): string {
-    if (tipoColKey) { const v = row[tipoColKey]?.trim(); if (v) return v }
-    const text = (row['Summary'] || '') + ' ' + (row['Description'] || '')
-    for (const [tipo, re] of TIPO_PATTERNS) if (re.test(text)) return tipo
+  // ── DATE PARSE ─────────────────────────────────────────────────────────────
+  // Format: "03/Feb/26 1:16 PM"
+  const MMAP: Record<string, number> = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 }
+  const MSHORT: Record<number, string> = { 0:'Ene',1:'Feb',2:'Mar',3:'Abr',4:'May',5:'Jun',6:'Jul',7:'Ago',8:'Sep',9:'Oct',10:'Nov',11:'Dic' }
+  function parseCreated(s: string): { month: number; week: number } | null {
+    const m = s.match(/^(\d{1,2})\/([A-Za-z]{3})\/\d{2}\s/)
+    if (!m) return null
+    const month = MMAP[m[2]]
+    if (month === undefined) return null
+    return { month, week: Math.min(Math.ceil(parseInt(m[1]) / 7), 4) }
+  }
+
+  // ── FIELD DETECTION ────────────────────────────────────────────────────────
+  const createdField = headers.find(h => /created/i.test(h)) ?? 'Created'
+  const agField = headers.find(h => /agencia/i.test(h)) ?? 'Custom field (Agencia que reporta)'
+  const urgField = headers.find(h => /urgencia/i.test(h)) ?? 'Custom field (Nivel de urgencia)'
+
+  // ── CLASSIFY TIPO DE ERROR ─────────────────────────────────────────────────
+  function classifyTipo(row: Record<string, string>): string {
+    const up = ((row['Summary'] ?? '') + ' ' + (row['Description'] ?? '')).toUpperCase()
+    if (/ENTRENAMIENTO|TRAINING/.test(up)) return 'Entrenamiento IA'
+    if (/RESET|RESETAR/.test(up)) return 'Reset / Act. IA'
+    if (/CAMPA[ÑN]|OFERTA|PROMO|BONO/.test(up)) return 'Campaña / Oferta'
+    if (/CITA|AGENDA|BPRO/.test(up)) return 'Error en Citas'
+    if (/LLAMADA|VOZ|TRANSFER/.test(up)) return 'Error Llamadas'
+    if (/WHATSAPP|MENSAJ|PLANTILLA/.test(up)) return 'Error WhatsApp'
+    if (/DIRECCI[OÓ]N|HORARIO|PRECIO|DA MAL/.test(up)) return 'Error Información'
+    if (/LEAD|CRM|SEEKOP|SYONET/.test(up) && !/CITA/.test(up)) return 'Error Leads / CRM'
     return 'Otro'
   }
-  rows.forEach(r => { r['_tipo'] = getTipo(r) })
+  rows.forEach(r => {
+    r['_tipo'] = classifyTipo(r)
+    const d = parseCreated(r[createdField] ?? '')
+    r['_month'] = d ? String(d.month) : '-1'
+    r['_week'] = d ? String(d.week) : '1'
+  })
+
+  // ── DETECT MONTHS ──────────────────────────────────────────────────────────
+  const monthSet = new Set(rows.map(r => r['_month']).filter(m => m !== '-1').map(Number))
+  const sortedMonths = Array.from(monthSet).sort((a, b) => a - b)
+  const m0 = sortedMonths[0] ?? 1
+  const m1 = sortedMonths[1]
+  const two = sortedMonths.length >= 2
+  const rowsM0 = rows.filter(r => Number(r['_month']) === m0)
+  const rowsM1 = two ? rows.filter(r => Number(r['_month']) === m1) : []
+  const nm0 = MSHORT[m0] ?? 'M1'
+  const nm1 = two ? (MSHORT[m1] ?? 'M2') : ''
 
   // ── STATISTICS ─────────────────────────────────────────────────────────────
   const total = rows.length
-  const done = rows.filter(r => r['Status'] === 'Done').length
-  const cancelled = rows.filter(r => /cancel/i.test(r['Status'])).length
-  const open = rows.filter(r => !/(done|cancel)/i.test(r['Status'])).length
-  const resolutionRate = total ? Math.round((done / total) * 100) : 0
+  const totalM0 = rowsM0.length
+  const totalM1 = rowsM1.length
+  const doneM0 = rowsM0.filter(r => r['Status'] === 'Done').length
+  const doneM1 = rowsM1.filter(r => r['Status'] === 'Done').length
+  const done = doneM0 + doneM1
+  const resRate = total ? Math.round((done / total) * 100) : 0
+  const resM0 = totalM0 ? Math.round((doneM0 / totalM0) * 100) : 0
+  const resM1 = totalM1 ? Math.round((doneM1 / totalM1) * 100) : 0
+  const critM0 = rowsM0.filter(r => /critico|critical/i.test(r[urgField] ?? '')).length
+  const critM1 = rowsM1.filter(r => /critico|critical/i.test(r[urgField] ?? '')).length
+  const critTotal = critM0 + critM1
 
-  const tipoCounts: Record<string, number> = {}
-  rows.forEach(r => { tipoCounts[r['_tipo']] = (tipoCounts[r['_tipo']] ?? 0) + 1 })
-  const tipoEntries = Object.entries(tipoCounts).sort((a, b) => b[1] - a[1])
-  const mostFreqError = tipoEntries[0]?.[0] ?? 'N/A'
+  const agMap: Record<string, number> = {}
+  rows.forEach(r => { const ag = r[agField]?.trim() || 'Sin agencia'; agMap[ag] = (agMap[ag] ?? 0) + 1 })
+  const topAgs = Object.entries(agMap).sort((a, b) => b[1] - a[1])
+  const topAgency = topAgs[0]?.[0] ?? 'N/A'
+  const topAgCount = topAgs[0]?.[1] ?? 0
+  const activeAgs = Object.keys(agMap).length
 
-  const agField = headers.find(h => /agencia/i.test(h)) ?? 'Custom field (Agencia que reporta)'
-  const agencias: Record<string, number> = {}
-  rows.forEach(r => { const ag = r[agField]?.trim() || 'Sin agencia'; agencias[ag] = (agencias[ag] ?? 0) + 1 })
-  const topAgencies = Object.entries(agencias).sort((a, b) => b[1] - a[1]).slice(0, 10)
-  const topAgency = topAgencies[0]?.[0] ?? 'N/A'
-  const activeAgencies = Object.keys(agencias).length
+  const tipoMap: Record<string, number> = {}
+  rows.forEach(r => { tipoMap[r['_tipo']] = (tipoMap[r['_tipo']] ?? 0) + 1 })
+  const topTipo = Object.entries(tipoMap).sort((a, b) => b[1] - a[1])[0]
+  const topTipoName = topTipo?.[0] ?? 'N/A'
+  const topTipoCount = topTipo?.[1] ?? 0
+  const topTipoPct = total ? Math.round((topTipoCount / total) * 100) : 0
 
-  const statusCounts: Record<string, number> = {}
-  rows.forEach(r => { statusCounts[r['Status']] = (statusCounts[r['Status']] ?? 0) + 1 })
-  const statusEntries = Object.entries(statusCounts).sort((a, b) => b[1] - a[1])
+  const waCount = tipoMap['Error WhatsApp'] ?? 0
+  const waPct = total ? Math.round((waCount / total) * 100) : 0
+  const waAlert = waPct >= 15 ? ` ⚠️ WhatsApp representa el ${waPct}% de los tickets.` : ''
 
-  const urgField = headers.find(h => /urgencia|priority|prioridad/i.test(h)) ?? 'Priority'
-  const urgCounts: Record<string, number> = {}
-  rows.forEach(r => { const u = r[urgField]?.trim() || 'Sin definir'; urgCounts[u] = (urgCounts[u] ?? 0) + 1 })
+  // ── CHART DATA ─────────────────────────────────────────────────────────────
+  const TIPO_ORDER = ['Error en Citas','Entrenamiento IA','Campaña / Oferta','Error Leads / CRM',
+    'Error WhatsApp','Error Información','Reset / Act. IA','Error Llamadas','Otro']
 
-  const createdField = headers.find(h => /created|fecha/i.test(h)) ?? 'Created'
-  const hourCounts: number[] = new Array(24).fill(0)
-  rows.forEach(r => { const d = new Date(r[createdField]); if (!isNaN(d.getTime())) hourCounts[d.getHours()]++ })
-  const maxHour = Math.max(...hourCounts)
-  const peakHour = hourCounts.indexOf(maxHour)
-
-  const top5Tipos = tipoEntries.slice(0, 5).map(e => e[0])
-  const top8Agencies = topAgencies.slice(0, 8).map(e => e[0])
-  const agTipoMatrix: Record<string, Record<string, number>> = {}
-  top8Agencies.forEach(ag => { agTipoMatrix[ag] = {}; top5Tipos.forEach(t => { agTipoMatrix[ag][t] = 0 }) })
-  rows.forEach(r => {
-    const ag = r[agField]?.trim() || 'Sin agencia'
-    const tipo = r['_tipo']
-    if (top8Agencies.includes(ag) && top5Tipos.includes(tipo)) agTipoMatrix[ag][tipo]++
-  })
-
-  // ── COLOR MAPS ─────────────────────────────────────────────────────────────
-  const TIPO_COLORS: Record<string, string> = {
-    'Error en Citas': '#ef4444', 'Entrenamiento IA': '#3b82f6', 'WhatsApp': '#f59e0b',
-    'Campaña': '#10b981', 'Leads/CRM': '#14b8a6', 'Información': '#a855f7',
-    'Reset': '#6366f1', 'Llamadas': '#f97316', 'Comportamiento': '#ec4899', 'Otro': '#94a3b8',
+  function weekCounts(arr: Record<string, string>[]): number[] {
+    const c = [0,0,0,0]
+    arr.forEach(r => { const w = Math.min(parseInt(r['_week'] ?? '1') - 1, 3); if (w >= 0) c[w]++ })
+    return c
   }
-  const URG_COLORS: Record<string, string> = {
-    'Critico': '#ef4444', 'Crítico': '#ef4444', 'Critical': '#ef4444',
-    'Alta': '#f97316', 'High': '#f97316',
-    'Media': '#eab308', 'Medium': '#eab308',
-    'Baja': '#22c55e', 'Low': '#22c55e',
+  function tipoCounts(arr: Record<string, string>[]): number[] {
+    return TIPO_ORDER.map(t => arr.filter(r => r['_tipo'] === t).length)
   }
-  const tc = (t: string) => TIPO_COLORS[t] || '#94a3b8'
-  const uc = (u: string) => URG_COLORS[u] || '#94a3b8'
+  function statusCounts(arr: Record<string, string>[]): number[] {
+    const d = arr.filter(r => r['Status'] === 'Done').length
+    const c = arr.filter(r => /cancel/i.test(r['Status'] ?? '')).length
+    return [d, c, arr.length - d - c]
+  }
+  const top8 = topAgs.slice(0, 8).map(e => e[0])
+  function agCounts(arr: Record<string, string>[]): number[] {
+    return top8.map(ag => arr.filter(r => (r[agField]?.trim() || 'Sin agencia') === ag).length)
+  }
 
-  // ── KPI CARDS ──────────────────────────────────────────────────────────────
+  const jWL = JSON.stringify(['Sem 1','Sem 2','Sem 3','Sem 4'])
+  const jW0 = JSON.stringify(weekCounts(rowsM0))
+  const jW1 = JSON.stringify(weekCounts(rowsM1))
+  const jTL = JSON.stringify(TIPO_ORDER)
+  const jT0 = JSON.stringify(tipoCounts(rowsM0))
+  const jT1 = JSON.stringify(tipoCounts(rowsM1))
+  const jSL = JSON.stringify(['Done','Cancelado','Pendiente / Otro'])
+  const jS0 = JSON.stringify(statusCounts(rowsM0))
+  const jS1 = JSON.stringify(statusCounts(rowsM1))
+  const jAL = JSON.stringify(top8)
+  const jA0 = JSON.stringify(agCounts(rowsM0))
+  const jA1 = JSON.stringify(agCounts(rowsM1))
+
+  // ── KPI HELPERS ────────────────────────────────────────────────────────────
+  function dot(clr: string, lbl: string, val: string | number): string {
+    return `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:8px;font-size:11px;color:#64748b"><span style="width:6px;height:6px;border-radius:50%;background:${clr};flex-shrink:0;display:inline-block"></span>${lbl}: <strong>${val}</strong></span>`
+  }
+
   const kpis = [
-    { label: 'Total tickets',       value: String(total),              sub: 'Período completo',                   color: '#1a56db', small: false },
-    { label: 'Tasa de resolución',  value: `${resolutionRate}%`,       sub: `${done} tickets cerrados`,           color: '#10b981', small: false },
-    { label: 'Error más frecuente', value: mostFreqError,              sub: `${tipoEntries[0]?.[1] ?? 0} tickets`, color: '#f59e0b', small: true  },
-    { label: 'Top agencia',         value: topAgency,                  sub: `${topAgencies[0]?.[1] ?? 0} tickets`, color: '#ef4444', small: true  },
-    { label: 'Tickets abiertos',    value: String(open),               sub: 'Sin resolver',                       color: '#f97316', small: false },
-    { label: 'Cancelados',          value: String(cancelled),          sub: 'Tickets cancelados',                 color: '#6366f1', small: false },
-    { label: 'Agencias activas',    value: String(activeAgencies),     sub: 'Con actividad',                      color: '#0d9488', small: false },
-    { label: 'Tipos de error',      value: String(tipoEntries.length), sub: 'Categorías detectadas',              color: '#0f1f3d', small: false },
+    { lbl:'Total tickets', c:'#1a56db', val:String(total), sm:false,
+      sub: two ? dot('#1a56db',nm0,totalM0)+dot('#0d9488',nm1,totalM1) : 'Período completo' },
+    { lbl:'Tasa de resolución', c:'#10b981', val:`${resRate}%`, sm:false,
+      sub: two ? dot('#1a56db',nm0,`${resM0}%`)+dot('#0d9488',nm1,`${resM1}%`) : `${done} tickets cerrados` },
+    { lbl:'Avg resolución', c:'#0d9488', val:'—', sm:false,
+      sub:'<span style="font-size:11px;color:#94a3b8">Sin datos de resolución</span>' },
+    { lbl:'Tickets críticos', c:'#ef4444', val:String(critTotal), sm:false,
+      sub: two ? dot('#1a56db',nm0,critM0)+dot('#0d9488',nm1,critM1) : 'Nivel crítico' },
+    { lbl:'SLA cumplido', c:'#10b981', val:`${resRate}%`, sm:false,
+      sub: two ? dot('#1a56db',nm0,`${resM0}%`)+dot('#0d9488',nm1,`${resM1}%`) : 'Del total' },
+    { lbl:'Mediana resolución', c:'#1a56db', val:'—', sm:false,
+      sub:'<span style="font-size:11px;color:#94a3b8">Sin datos de resolución</span>' },
+    { lbl:'Error más frecuente', c:'#f59e0b', val:topTipoName, sm:true,
+      sub:`<span style="font-size:11px;color:#94a3b8">${topTipoCount} tickets · ${topTipoPct}%</span>` },
+    { lbl:'Agencia con más tickets', c:'#0f1f3d', val:topAgency, sm:true,
+      sub:`<span style="font-size:11px;color:#94a3b8">${topAgCount} tickets</span>` },
   ]
 
-  // ── CHART DATA (serialized) ────────────────────────────────────────────────
-  const tipoLabels   = JSON.stringify(tipoEntries.map(e => e[0]))
-  const tipoData     = JSON.stringify(tipoEntries.map(e => e[1]))
-  const tipoColors   = JSON.stringify(tipoEntries.map(e => tc(e[0])))
-  const agLabels     = JSON.stringify(topAgencies.map(e => e[0]))
-  const agData       = JSON.stringify(topAgencies.map(e => e[1]))
-  const urgLabels    = JSON.stringify(Object.keys(urgCounts))
-  const urgData      = JSON.stringify(Object.values(urgCounts))
-  const urgColors    = JSON.stringify(Object.keys(urgCounts).map(uc))
-  const statusLabels = JSON.stringify(statusEntries.map(e => e[0]))
-  const statusData   = JSON.stringify(statusEntries.map(e => e[1]))
-  const hourLabels   = JSON.stringify(Array.from({ length: 24 }, (_, i) => `${i}:00`))
-  const hourData     = JSON.stringify(hourCounts)
-  const hourColors   = JSON.stringify(hourCounts.map((v, i) => i === peakHour ? '#ef4444' : v >= maxHour * 0.7 ? '#f59e0b' : '#1a56db'))
-  const groupLabels  = JSON.stringify(top8Agencies)
-  const groupDatasets = JSON.stringify(top5Tipos.map(tipo => ({
-    label: tipo,
-    data: top8Agencies.map(ag => agTipoMatrix[ag][tipo] || 0),
-    backgroundColor: tc(tipo),
-  })))
+  const insight = `📌 El período tiene <strong>${total} tickets</strong> en <strong>${activeAgs} agencias</strong>. El problema más frecuente fue <strong>${topTipoName}</strong> (${topTipoCount} tickets, ${topTipoPct}%).${waAlert}`
+  const genDate = new Date().toLocaleDateString('es-MX', { year:'numeric', month:'long', day:'numeric' })
+  const SUBTITLE = 'Mesa de Ayuda — Grupo Continental · Plataforma de Agentes IA Dorstep'
 
-  const insightText = `Se analizaron <strong>${total} tickets</strong> en el período. Tasa de resolución: <strong>${resolutionRate}%</strong>. Problema más frecuente: <strong>${mostFreqError}</strong>. Agencia con mayor actividad: <strong>${topAgency}</strong>. ${open} tickets permanecen abiertos.`
-  const genDate = new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })
+  const badgesHTML = two
+    ? `<span class="bdg bdg0">${nm0} · ${totalM0} tickets</span><span class="bdg bdg1">${nm1} · ${totalM1} tickets</span>`
+    : `<span class="bdg bdg0">${nm0} · ${totalM0} tickets</span>`
+
+  const kpisHTML = kpis.map(k =>
+    `<div class="kpi" style="--c:${k.c}"><div class="kpi-lbl">${k.lbl}</div><div class="kpi-val${k.sm?' sm':''}">${k.val}</div><div class="kpi-sub">${k.sub}</div></div>`
+  ).join('')
+
+  const comparativeSection = two ? `
+  <div class="sec">
+    <h2>Análisis comparativo ${nm0} vs ${nm1}</h2>
+    <div class="legend">
+      <div class="li"><div class="ld" style="background:#1a56db"></div>${nm0}</div>
+      <div class="li"><div class="ld" style="background:#0d9488"></div>${nm1}</div>
+    </div>
+    <div class="g2" style="margin-bottom:16px">
+      <div>
+        <div class="chart-lbl">Evolución semanal de tickets creados</div>
+        <div class="cw" style="height:200px"><canvas id="weekChart"></canvas></div>
+      </div>
+      <div>
+        <div class="chart-lbl">Estado de tickets</div>
+        <div class="cw" style="height:200px"><canvas id="statusChart"></canvas></div>
+      </div>
+    </div>
+    <div class="chart-lbl">Tickets por tipo de error — comparativo</div>
+    <div class="cw" style="height:230px;margin-bottom:20px"><canvas id="tipoChart"></canvas></div>
+    <div class="chart-lbl">Tickets por agencia — top 8</div>
+    <div class="cw" style="height:230px"><canvas id="agChart"></canvas></div>
+  </div>` : ''
+
+  const comparativeJS = two ? `
+var lCfg = { display:true, position:'top', labels:{ boxWidth:10, padding:10, font:{size:11} } };
+new Chart(document.getElementById('weekChart'), {
+  type:'line',
+  data:{ labels:${jWL}, datasets:[
+    { label:nm0, data:${jW0}, borderColor:'#1a56db', backgroundColor:'rgba(26,86,219,0.10)', fill:true, tension:0.35, pointRadius:5, pointBackgroundColor:'#1a56db' },
+    { label:nm1, data:${jW1}, borderColor:'#0d9488', backgroundColor:'rgba(13,148,136,0.10)', fill:true, tension:0.35, pointRadius:5, pointBackgroundColor:'#0d9488' }
+  ]},
+  options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:lCfg },
+    scales:{ x:{grid:{color:gc}}, y:{grid:{color:gc},ticks:{precision:0}} } }
+});
+new Chart(document.getElementById('tipoChart'), {
+  type:'bar',
+  data:{ labels:${jTL}, datasets:[
+    { label:nm0, data:${jT0}, backgroundColor:'#1a56db', borderRadius:4 },
+    { label:nm1, data:${jT1}, backgroundColor:'#0d9488', borderRadius:4 }
+  ]},
+  options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:lCfg },
+    scales:{ x:{grid:{color:gc}}, y:{grid:{color:gc},ticks:{precision:0}} } }
+});
+new Chart(document.getElementById('statusChart'), {
+  type:'bar',
+  data:{ labels:${jSL}, datasets:[
+    { label:nm0, data:${jS0}, backgroundColor:'#1a56db', borderRadius:4 },
+    { label:nm1, data:${jS1}, backgroundColor:'#0d9488', borderRadius:4 }
+  ]},
+  options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:lCfg },
+    scales:{ x:{grid:{color:gc},ticks:{precision:0}}, y:{grid:{display:false}} } }
+});
+new Chart(document.getElementById('agChart'), {
+  type:'bar',
+  data:{ labels:${jAL}, datasets:[
+    { label:nm0, data:${jA0}, backgroundColor:'#1a56db', borderRadius:4 },
+    { label:nm1, data:${jA1}, backgroundColor:'#0d9488', borderRadius:4 }
+  ]},
+  options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:lCfg },
+    scales:{ x:{grid:{color:gc},ticks:{maxRotation:35,minRotation:35,font:{size:10}}}, y:{grid:{color:gc},ticks:{precision:0}} } }
+});` : ''
 
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"><\/script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'DM Sans',sans-serif;background:#f8fafc;color:#1e293b;font-size:14px}
-.header{background:#0f1f3d;color:#fff;padding:36px 48px}
-.header-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
-.header h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bottom:6px}
-.header .meta{font-size:12px;opacity:.6;display:flex;gap:14px;flex-wrap:wrap;margin-top:4px}
-.badge{background:rgba(255,255,255,.15);padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap;align-self:flex-start}
-.insight{background:#0f1f3d;border-top:1px solid rgba(255,255,255,.08);padding:16px 48px}
-.insight p{font-size:13px;color:rgba(255,255,255,.65);line-height:1.7}
-.insight strong{color:#60a5fa;font-weight:600}
-.page{max-width:1060px;margin:0 auto;padding:32px 24px 64px}
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px}
-.kpi{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:18px 20px;border-top:3px solid var(--c)}
+body{font-family:'DM Sans',sans-serif;background:#f8fafc;color:#1e293b;font-size:13px}
+.hdr{background:#0f1f3d;color:#fff;padding:30px 48px 26px}
+.hdr-row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.hdr h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;margin-bottom:4px}
+.hdr .sub{font-size:11px;opacity:.5;margin-bottom:10px}
+.bdg{display:inline-block;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.3px;margin-right:6px}
+.bdg0{background:rgba(26,86,219,0.25);color:#93c5fd}
+.bdg1{background:rgba(13,148,136,0.25);color:#5eead4}
+.hdr-r{text-align:right}
+.hdr-r .dt{font-size:11px;opacity:.5;margin-bottom:4px}
+.hdr-r .tot{font-size:24px;font-weight:700;letter-spacing:-.5px}
+.hdr-r .tot-l{font-size:10px;opacity:.45;text-transform:uppercase;letter-spacing:.8px}
+.ins{background:#0f1f3d;border-top:1px solid rgba(255,255,255,.08);padding:14px 48px}
+.ins p{font-size:13px;color:rgba(255,255,255,.65);line-height:1.7}
+.ins strong{color:#93c5fd;font-weight:600}
+.page{max-width:1080px;margin:0 auto;padding:28px 24px 60px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+.kpi{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px;border-top:3px solid var(--c)}
 .kpi-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#64748b;margin-bottom:8px}
-.kpi-val{font-size:30px;font-weight:700;color:#0f1f3d;line-height:1}
-.kpi-val.sm{font-size:15px;font-weight:600;line-height:1.3;margin-top:4px}
-.kpi-sub{font-size:11px;color:#94a3b8;margin-top:6px}
+.kpi-val{font-size:28px;font-weight:700;color:#0f1f3d;line-height:1}
+.kpi-val.sm{font-size:14px;font-weight:600;line-height:1.4;margin-top:4px}
+.kpi-sub{font-size:11px;color:#94a3b8;margin-top:7px}
 .sec{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:22px 24px;margin-bottom:16px}
-.sec h2{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#94a3b8;margin-bottom:18px}
-.two-col{display:grid;grid-template-columns:320px 1fr;gap:0;align-items:start}
-.divider-r{padding-right:24px;border-right:1px solid #f1f5f9}
-.divider-l{padding-left:24px}
-.side2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
-.side2 .sec{margin-bottom:0}
-.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
-.bar-lbl{width:160px;flex-shrink:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#475569}
-.bar-track{flex:1;height:9px;background:#f1f5f9;border-radius:5px;overflow:hidden}
-.bar-fill{height:100%;border-radius:5px}
-.bar-val{width:30px;text-align:right;font-size:12px;font-weight:600;color:#1e293b}
-.footer{margin-top:48px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
-@media print{
-  body{background:#fff}
-  .sec,.kpi{break-inside:avoid}
-  .header,.insight{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .page{padding:16px}
-}
+.sec h2{font-family:'DM Serif Display',serif;font-size:17px;font-weight:400;color:#0f1f3d;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #e2e8f0}
+.legend{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.li{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:#475569}
+.ld{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.chart-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#94a3b8;margin-bottom:10px}
+.cw{position:relative}
+.footer{margin-top:40px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+@media print{body{background:#fff}.sec,.kpi{break-inside:avoid}.hdr,.ins{-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{padding:16px}}
 </style>
 </head>
 <body>
-
-<div class="header">
-  <div class="header-top">
+<div class="hdr">
+  <div class="hdr-row">
     <div>
       <h1>${title}</h1>
-      <div class="meta">
-        ${period ? `<span>Per\u00edodo: ${period}</span><span>\u00b7</span>` : ''}
-        <span>Generado el ${genDate}</span>
-      </div>
+      <div class="sub">${SUBTITLE}</div>
+      <div>${badgesHTML}</div>
     </div>
-    <div class="badge">${total} tickets analizados</div>
+    <div class="hdr-r">
+      <div class="dt">Generado el ${genDate}</div>
+      <div class="tot">${total}</div>
+      <div class="tot-l">tickets totales</div>
+    </div>
   </div>
 </div>
-<div class="insight"><p>${insightText}</p></div>
-
+<div class="ins"><p>${insight}</p></div>
 <div class="page">
-  <div class="kpis">
-    ${kpis.map(k => `<div class="kpi" style="--c:${k.color}">
-      <div class="kpi-lbl">${k.label}</div>
-      <div class="kpi-val${k.small ? ' sm' : ''}">${k.value}</div>
-      <div class="kpi-sub">${k.sub}</div>
-    </div>`).join('')}
-  </div>
-
-  <div class="sec">
-    <h2>Clasificaci\u00f3n de problemas</h2>
-    <div class="two-col">
-      <div class="divider-r"><canvas id="tipoDonut" height="260"></canvas></div>
-      <div class="divider-l">
-        ${tipoEntries.map(([t, n]) => `<div class="bar-row">
-          <div class="bar-lbl" title="${t}">${t}</div>
-          <div class="bar-track"><div class="bar-fill" style="width:${total ? Math.round((n / total) * 100) : 0}%;background:${tc(t)}"></div></div>
-          <div class="bar-val">${n}</div>
-        </div>`).join('')}
-      </div>
-    </div>
-  </div>
-
-  <div class="sec">
-    <h2>An\u00e1lisis por agencia \u2014 Top 10</h2>
-    <canvas id="agChart" height="220"></canvas>
-  </div>
-
-  <div class="side2">
-    <div class="sec">
-      <h2>Distribuci\u00f3n por urgencia</h2>
-      <canvas id="urgDonut" height="230"></canvas>
-    </div>
-    <div class="sec">
-      <h2>Estado de tickets</h2>
-      <canvas id="statusChart" height="230"></canvas>
-    </div>
-  </div>
-
-  <div class="sec">
-    <h2>Desempe\u00f1o operativo \u2014 Tickets por hora del d\u00eda</h2>
-    <canvas id="hourChart" height="160"></canvas>
-  </div>
-
-  <div class="sec">
-    <h2>Desempe\u00f1o operativo \u2014 Top 5 tipos de error por agencia</h2>
-    <canvas id="groupedChart" height="200"></canvas>
-  </div>
-
+  <div class="kpis">${kpisHTML}</div>
+  ${comparativeSection}
   <div class="footer">
-    <span>${title}${period ? ` \u00b7 ${period}` : ''}</span>
-    <span>${total} tickets \u00b7 ${activeAgencies} agencias \u00b7 ${tipoEntries.length} tipos de error</span>
+    <span>${title}${period ? ` · ${period}` : ''}</span>
+    <span>${total} tickets · ${activeAgs} agencias</span>
   </div>
 </div>
-
 <script>
 Chart.defaults.font.family = "'DM Sans', sans-serif";
-Chart.defaults.font.size = 11;
-Chart.defaults.plugins.legend.labels.boxWidth = 12;
-Chart.defaults.plugins.legend.labels.padding = 14;
-
-new Chart(document.getElementById('tipoDonut'), {
-  type: 'doughnut',
-  data: { labels: ${tipoLabels}, datasets: [{ data: ${tipoData}, backgroundColor: ${tipoColors}, borderWidth: 2, borderColor: '#fff' }] },
-  options: { cutout: '62%', plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } } }
-});
-
-new Chart(document.getElementById('agChart'), {
-  type: 'bar',
-  data: { labels: ${agLabels}, datasets: [{ data: ${agData}, backgroundColor: '#1a56db', borderRadius: 4 }] },
-  options: {
-    indexAxis: 'y',
-    plugins: { legend: { display: false } },
-    scales: { x: { grid: { color: '#f1f5f9' }, ticks: { precision: 0 } }, y: { grid: { display: false } } }
-  }
-});
-
-new Chart(document.getElementById('urgDonut'), {
-  type: 'doughnut',
-  data: { labels: ${urgLabels}, datasets: [{ data: ${urgData}, backgroundColor: ${urgColors}, borderWidth: 2, borderColor: '#fff' }] },
-  options: { cutout: '60%', plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } } }
-});
-
-new Chart(document.getElementById('statusChart'), {
-  type: 'bar',
-  data: { labels: ${statusLabels}, datasets: [{ data: ${statusData}, backgroundColor: '#0d9488', borderRadius: 4 }] },
-  options: {
-    indexAxis: 'y',
-    plugins: { legend: { display: false } },
-    scales: { x: { grid: { color: '#f1f5f9' }, ticks: { precision: 0 } }, y: { grid: { display: false } } }
-  }
-});
-
-new Chart(document.getElementById('hourChart'), {
-  type: 'bar',
-  data: { labels: ${hourLabels}, datasets: [{ data: ${hourData}, backgroundColor: ${hourColors}, borderRadius: 3 }] },
-  options: {
-    plugins: { legend: { display: false } },
-    scales: { x: { grid: { display: false } }, y: { grid: { color: '#f1f5f9' }, ticks: { precision: 0 } } }
-  }
-});
-
-new Chart(document.getElementById('groupedChart'), {
-  type: 'bar',
-  data: { labels: ${groupLabels}, datasets: ${groupDatasets} },
-  options: {
-    plugins: { legend: { position: 'bottom' } },
-    scales: { x: { grid: { display: false }, ticks: { font: { size: 10 } } }, y: { grid: { color: '#f1f5f9' }, ticks: { precision: 0 } } }
-  }
-});
+Chart.defaults.font.size = 12;
+Chart.defaults.color = '#64748b';
+Chart.defaults.plugins.legend.display = false;
+var gc = 'rgba(0,0,0,0.04)';
+var nm0 = ${JSON.stringify(nm0)}, nm1 = ${JSON.stringify(nm1)};
+${comparativeJS}
 <\/script>
 </body>
 </html>`
