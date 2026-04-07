@@ -10,19 +10,36 @@ export default function NewClientPage() {
   const router = useRouter()
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', company: '', email: '', phone: '', notes: '', tags: '' })
   function set(field: string, value: string) { setForm(prev => ({ ...prev, [field]: value })) }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setError(null)
     setLoading(true)
-    const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean)
-    const { data, error } = await supabase.from('clients').insert({
-      name: form.name, company: form.company || null, email: form.email || null,
-      phone: form.phone || null, notes: form.notes || null, tags: tags.length ? tags : null,
-    }).select().single()
-    if (!error && data) router.push(`/clients/${data.id}`)
-    setLoading(false)
+    try {
+      const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean)
+      const { data, error: insertError } = await supabase.from('clients').insert({
+        name: form.name.trim(), company: form.company.trim() || null, email: form.email.trim() || null,
+        phone: form.phone.trim() || null, notes: form.notes.trim() || null, tags: tags.length ? tags : null,
+      }).select('id')
+      if (insertError) {
+        setError(insertError.message)
+        return
+      }
+      const id = data?.[0]?.id
+      if (id) {
+        router.push(`/clients/${id}`)
+        router.refresh()
+        return
+      }
+      setError('No se guardó el cliente (sin respuesta del servidor). Revisa políticas RLS en Supabase o la consola.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado al guardar')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -33,10 +50,15 @@ export default function NewClientPage() {
           <h1 className="page-title">Nuevo cliente</h1>
         </div>
         <form onSubmit={handleSubmit} className="card space-y-5">
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm px-4 py-3" role="alert">
+              {error}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2"><label className="label">Nombre *</label><input className="input" required value={form.name} onChange={e => set('name', e.target.value)} placeholder="Nombre del contacto" /></div>
             <div><label className="label">Empresa</label><input className="input" value={form.company} onChange={e => set('company', e.target.value)} placeholder="Empresa" /></div>
-            <div><label className="label">Correo</label><input className="input" type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="correo@empresa.com" /></div>
+            <div><label className="label">Correo</label><input className="input" type="text" inputMode="email" autoComplete="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="correo@empresa.com" /></div>
             <div><label className="label">Teléfono</label><input className="input" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+52 55 0000 0000" /></div>
             <div><label className="label">Tags (separados por coma)</label><input className="input" value={form.tags} onChange={e => set('tags', e.target.value)} placeholder="BMW, GWM" /></div>
             <div className="col-span-2"><label className="label">Notas</label><textarea className="input min-h-[100px] resize-none" value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Información relevante..." /></div>

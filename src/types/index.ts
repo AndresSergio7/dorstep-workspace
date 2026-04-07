@@ -21,14 +21,19 @@ export interface Meeting {
   client?: Client
   action_items?: ActionItem[]
 }
+export type ActionItemStatus = 'todo' | 'in_progress' | 'done'
+
 export interface ActionItem {
   id: string
   meeting_id: string | null
   client_id: string | null
   text: string
   done: boolean
+  status?: ActionItemStatus | null
   due_date: string | null
   created_at: string
+  client?: Pick<Client, 'id' | 'name'>
+  meeting?: Pick<Meeting, 'id' | 'title' | 'date'>
 }
 export interface Problem {
   id: string

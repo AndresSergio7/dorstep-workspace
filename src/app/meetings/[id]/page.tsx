@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Plus, Trash2, Check, Building2, Calendar, Users } from 'lucide-react'
+import { dbFieldsForStatus } from '@/lib/action-items'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -38,13 +39,19 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
 
   async function addItem() {
     if (!newItem.trim()) return
-    const { data } = await supabase.from('action_items').insert({ meeting_id: id, client_id: meeting?.client?.id ?? null, text: newItem.trim() }).select().single()
+    const { data } = await supabase.from('action_items').insert({
+      meeting_id: id,
+      client_id: meeting?.client?.id ?? null,
+      text: newItem.trim(),
+      ...dbFieldsForStatus('todo'),
+    }).select().single()
     if (data) { setActionItems(prev => [...prev, data]); setNewItem('') }
   }
 
   async function toggleItem(itemId: string, done: boolean) {
-    await supabase.from('action_items').update({ done: !done }).eq('id', itemId)
-    setActionItems(prev => prev.map(i => i.id === itemId ? { ...i, done: !done } : i))
+    const next = dbFieldsForStatus(!done ? 'done' : 'todo')
+    await supabase.from('action_items').update(next).eq('id', itemId)
+    setActionItems(prev => prev.map(i => (i.id === itemId ? { ...i, ...next } : i)))
   }
 
   async function deleteItem(itemId: string) {

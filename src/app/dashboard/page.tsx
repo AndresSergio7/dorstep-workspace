@@ -50,7 +50,7 @@ export default async function DashboardPage() {
           <div className="card">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2"><CheckSquare size={16} className="text-slate-400" /><h2 className="font-semibold text-slate-700">Pendientes</h2></div>
-              <Link href="/meetings" className="text-xs text-blue-600 hover:underline">Ver todo</Link>
+              <Link href="/tasks" className="text-xs text-blue-600 hover:underline">Ver tablero</Link>
             </div>
             {!pendingItems?.length ? (
               <p className="text-slate-400 text-sm py-4 text-center">Sin pendientes 🎉</p>

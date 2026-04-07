@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { dbFieldsForStatus } from '@/lib/action-items'
 
 function NewMeetingForm() {
   const router = useRouter()
@@ -27,7 +28,16 @@ function NewMeetingForm() {
     const { data: meeting, error } = await supabase.from('meetings').insert({ client_id: form.client_id || null, title: form.title, date: form.date, attendees: form.attendees || null, content: form.content || null }).select().single()
     if (!error && meeting) {
       const items = actionItems.filter(t => t.trim())
-      if (items.length) await supabase.from('action_items').insert(items.map(text => ({ meeting_id: meeting.id, client_id: form.client_id || null, text })))
+      if (items.length) {
+        await supabase.from('action_items').insert(
+          items.map(text => ({
+            meeting_id: meeting.id,
+            client_id: form.client_id || null,
+            text,
+            ...dbFieldsForStatus('todo'),
+          })),
+        )
+      }
       router.push(`/meetings/${meeting.id}`)
     }
     setLoading(false)
