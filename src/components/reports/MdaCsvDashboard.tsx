@@ -2,14 +2,18 @@
 
 import { useMemo, useState, useCallback, useEffect, type ReactNode } from 'react'
 import Papa from 'papaparse'
-import { Upload, BarChart3, Info, Download } from 'lucide-react'
+import { Upload, BarChart3, Info, Download, TrendingUp, TrendingDown, AlertCircle, Lightbulb } from 'lucide-react'
 import {
   rowToTicket,
   distinctMonthKeys,
   buildMonthMetrics,
   monthLabelEs,
   deltaPct,
+  detectChanges,
+  generateExecutiveSummary,
+  generateKeyFindings,
   type ParsedTicket,
+  type ChangeInsight,
 } from '@/lib/mda-analytics'
 import { buildMdaExportHtml } from '@/lib/mda-report-html'
 import { cn } from '@/lib/utils'
@@ -95,6 +99,69 @@ function HorizontalBars({
   )
 }
 
+function CompareList({
+  currentList,
+  prevList,
+  limit,
+}: {
+  currentList: { label: string; count: number }[]
+  prevList: { label: string; count: number }[]
+  limit: number
+}) {
+  const allKeys = new Set([...currentList.map(x => x.label), ...prevList.map(x => x.label)])
+  const compared = [...allKeys].map(key => {
+    const curr = currentList.find(x => x.label === key)?.count ?? 0
+    const prev = prevList.find(x => x.label === key)?.count ?? 0
+    return { label: key, curr, prev, total: curr + prev }
+  })
+  const sorted = compared.sort((a, b) => b.total - a.total).slice(0, limit)
+  const maxVal = Math.max(...sorted.map(x => Math.max(x.curr, x.prev)), 1)
+
+  return (
+    <div className="space-y-3">
+      {sorted.map(row => (
+        <div key={row.label}>
+          <div className="flex justify-between text-xs mb-1.5 gap-2">
+            <span className="text-slate-700 font-medium truncate" title={row.label}>
+              {row.label}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-6 bg-slate-100 rounded overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 transition-all"
+                  style={{ width: `${(row.curr / maxVal) * 100}%` }}
+                  title="Mes actual"
+                />
+              </div>
+              <span className="text-xs font-semibold text-emerald-700 w-8 text-right tabular-nums">{row.curr}</span>
+            </div>
+            <div className="flex items-center gap-2 opacity-70">
+              <div className="flex-1 h-6 bg-slate-100 rounded overflow-hidden">
+                <div
+                  className="h-full bg-slate-400 transition-all"
+                  style={{ width: `${(row.prev / maxVal) * 100}%` }}
+                  title="Mes anterior"
+                />
+              </div>
+              <span className="text-xs text-slate-600 w-8 text-right tabular-nums">{row.prev}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+      <div className="flex gap-4 text-xs pt-2 border-t border-slate-100">
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded bg-emerald-500" /> Mes actual
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded bg-slate-400" /> Mes anterior
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export default function MdaCsvDashboard() {
   const [tickets, setTickets] = useState<ParsedTicket[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
@@ -144,6 +211,21 @@ export default function MdaCsvDashboard() {
 
   const focus = useMemo(() => (focusKey ? buildMonthMetrics(tickets, focusKey) : null), [tickets, focusKey])
   const refM = useMemo(() => (refKey ? buildMonthMetrics(tickets, refKey) : null), [tickets, refKey])
+
+  const executiveSummary = useMemo(() => {
+    if (!focus) return null
+    return generateExecutiveSummary(focus, refM)
+  }, [focus, refM])
+
+  const keyFindings = useMemo(() => {
+    if (!focus) return []
+    return generateKeyFindings(focus, refM)
+  }, [focus, refM])
+
+  const changes = useMemo(() => {
+    if (!focus || !refM) return null
+    return detectChanges(focus, refM)
+  }, [focus, refM])
 
   function downloadExport() {
     if (!focus) return
@@ -257,24 +339,88 @@ export default function MdaCsvDashboard() {
 
           {focus && (
             <>
-              <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/80 to-white p-6 mb-8">
-                <p className="text-xs font-bold uppercase tracking-wider text-emerald-800 mb-1">Periodo destacado</p>
-                <h3 className="text-2xl font-bold text-slate-900">{capitalizeMonth(monthLabelEs(focus.monthKey))}</h3>
-                {refM && (
-                  <p className="text-sm text-slate-600 mt-2">
-                    Referencia: <span className="font-medium">{capitalizeMonth(monthLabelEs(refM.monthKey))}</span> (comparativo)
-                  </p>
+              <div className="rounded-xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-emerald-50/30 p-8 mb-8 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <BarChart3 className="text-emerald-600" size={24} />
+                  <h3 className="text-xl font-bold text-slate-900">Resumen ejecutivo</h3>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                  <div className="bg-white rounded-lg p-4 border border-slate-200">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Periodo destacado</p>
+                    <p className="text-2xl font-bold text-slate-900">{capitalizeMonth(monthLabelEs(focus.monthKey))}</p>
+                    {refM && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        vs. <span className="font-medium">{capitalizeMonth(monthLabelEs(refM.monthKey))}</span>
+                      </p>
+                    )}
+                  </div>
+                  <div className="bg-white rounded-lg p-4 border border-slate-200">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Total tickets</p>
+                    <p className="text-2xl font-bold text-emerald-700">{focus.total}</p>
+                    {refM && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Anterior: {refM.total}{' '}
+                        <span className={cn('font-semibold', focus.total > refM.total ? 'text-amber-600' : 'text-emerald-600')}>
+                          ({focus.total > refM.total ? '+' : ''}
+                          {focus.total - refM.total})
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                  <div className="bg-white rounded-lg p-4 border border-slate-200">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Tasa de cierre</p>
+                    <p className="text-2xl font-bold text-sky-700">{focus.resolutionRatePct}%</p>
+                    {refM && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Anterior: {refM.resolutionRatePct}%{' '}
+                        <span
+                          className={cn(
+                            'font-semibold',
+                            focus.resolutionRatePct > refM.resolutionRatePct ? 'text-emerald-600' : 'text-rose-600',
+                          )}
+                        >
+                          ({focus.resolutionRatePct > refM.resolutionRatePct ? '+' : ''}
+                          {focus.resolutionRatePct - refM.resolutionRatePct}pp)
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {executiveSummary && (
+                  <div className="bg-white border-l-4 border-emerald-500 rounded-lg p-4 shadow-sm">
+                    <p className="text-sm text-slate-700 leading-relaxed">{executiveSummary}</p>
+                  </div>
                 )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-                <KpiCard title="Tickets creados" focus={focus.total} refVal={refM?.total} suffix="" />
+                <KpiCard title="Tickets mes actual" focus={focus.total} refVal={refM?.total} suffix="" />
+                <KpiCard title="Tickets cerrados" focus={focus.done} refVal={refM?.done} suffix="" />
                 <KpiCard
                   title="Tasa resolución (Done)"
                   focus={focus.resolutionRatePct}
                   refVal={refM?.resolutionRatePct}
                   suffix="%"
                   isPct
+                />
+                <KpiCard
+                  title="Variación mensual"
+                  custom={
+                    refM ? (
+                      <p
+                        className={cn(
+                          'text-2xl font-bold mt-1',
+                          focus.total > refM.total ? 'text-amber-600' : 'text-emerald-600',
+                        )}
+                      >
+                        {focus.total > refM.total ? '+' : ''}
+                        {((focus.total - refM.total) / refM.total * 100).toFixed(1)}%
+                      </p>
+                    ) : (
+                      <p className="text-slate-400 text-lg">N/A</p>
+                    )
+                  }
+                  sub={refM ? `${focus.total - refM.total > 0 ? '+' : ''}${focus.total - refM.total} tickets` : undefined}
                 />
                 <KpiCard
                   title="Tiempo medio hasta cierre"
@@ -300,6 +446,8 @@ export default function MdaCsvDashboard() {
                   }
                   refLabel={refM?.pctResolvedWithin48h != null ? `${refM.pctResolvedWithin48h}%` : undefined}
                 />
+                <KpiCard title="Agencias activas" focus={focus.activeAgencies} suffix="" />
+                <KpiCard title="Departamentos activos" focus={focus.activeDepartments} suffix="" />
                 <KpiCard
                   title="Error más frecuente"
                   custom={
@@ -370,20 +518,83 @@ export default function MdaCsvDashboard() {
                 </div>
               </div>
 
+              {refM && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                  <div className="card">
+                    <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">
+                      Total tickets: comparativo mes a mes
+                    </h3>
+                    <div className="space-y-4">
+                      <BarCompare
+                        label={capitalizeMonth(monthLabelEs(focus.monthKey))}
+                        focusVal={focus.total}
+                        refVal={refM.total}
+                      />
+                    </div>
+                  </div>
+                  <div className="card">
+                    <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">
+                      Tickets por urgencia: comparativo
+                    </h3>
+                    <CompareList currentList={focus.byUrgency} prevList={refM.byUrgency} limit={5} />
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                 <div className="card">
-                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">Tipo de error (top)</h3>
-                  <HorizontalBars items={focus.byErrorType} maxItems={10} barClass="bg-violet-500" />
+                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">
+                    {refM ? 'Top 5 agencias: comparativo' : 'Por agencia (mes actual)'}
+                  </h3>
+                  {refM ? (
+                    <CompareList currentList={focus.byAgency} prevList={refM.byAgency} limit={5} />
+                  ) : (
+                    <HorizontalBars items={focus.byAgency} maxItems={10} barClass="bg-amber-500" />
+                  )}
                 </div>
                 <div className="card">
-                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">Por agencia (top)</h3>
-                  <HorizontalBars items={focus.byAgency} maxItems={10} barClass="bg-amber-500" />
+                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">
+                    {refM ? 'Top 5 tipos de error: comparativo' : 'Tipo de error (mes actual)'}
+                  </h3>
+                  {refM ? (
+                    <CompareList currentList={focus.byErrorType} prevList={refM.byErrorType} limit={5} />
+                  ) : (
+                    <HorizontalBars items={focus.byErrorType} maxItems={10} barClass="bg-violet-500" />
+                  )}
+                </div>
+              </div>
+
+              {focus.activeDepartments > 1 && (
+                <div className="card mb-8">
+                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">
+                    {refM ? 'Tickets por departamento: comparativo' : 'Por departamento (mes actual)'}
+                  </h3>
+                  {refM ? (
+                    <CompareList currentList={focus.byDepartment} prevList={refM.byDepartment} limit={6} />
+                  ) : (
+                    <HorizontalBars items={focus.byDepartment} maxItems={8} barClass="bg-cyan-500" />
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <div className="card">
+                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-1">Estado (mes actual)</h3>
+                  <p className="text-xs text-slate-500 mb-4">Distribución por status</p>
+                  <HorizontalBars items={focus.byStatus} maxItems={8} barClass="bg-sky-500" />
+                </div>
+                <div className="card">
+                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-1">
+                    Distribución de urgencia (mes actual)
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4">Nivel de prioridad</p>
+                  <HorizontalBars items={focus.byUrgency} maxItems={6} barClass="bg-rose-500" />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                 <div className="card">
-                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-1">Reporter</h3>
+                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-1">Reporter (mes actual)</h3>
                   <p className="text-xs text-slate-500 mb-4">Quién creó los tickets</p>
                   <HorizontalBars items={focus.byReporter} maxItems={12} barClass="bg-cyan-600" />
                 </div>
@@ -395,6 +606,84 @@ export default function MdaCsvDashboard() {
                   <HorizontalBars items={focus.resolutionBuckets} maxItems={4} barClass="bg-emerald-600" />
                 </div>
               </div>
+
+              {changes && (changes.increases.length > 0 || changes.decreases.length > 0) && (
+                <div className="card mb-8 bg-gradient-to-br from-blue-50 to-white border-blue-200">
+                  <div className="flex items-center gap-2 mb-4">
+                    <AlertCircle className="text-blue-600" size={20} />
+                    <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Análisis de cambios (mes a mes)</h3>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {changes.increases.length > 0 && (
+                      <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                        <div className="flex items-center gap-2 mb-3">
+                          <TrendingUp className="text-emerald-600" size={18} />
+                          <p className="font-semibold text-emerald-900 text-sm">Principales incrementos</p>
+                        </div>
+                        <div className="space-y-2">
+                          {changes.increases.map((c, i) => (
+                            <div key={i} className="flex justify-between items-center text-sm bg-white rounded p-2">
+                              <span className="text-slate-700 truncate flex-1">
+                                {c.entity}{' '}
+                                <span className="text-xs text-slate-400">
+                                  ({c.entityType === 'agency' ? 'Agencia' : c.entityType === 'department' ? 'Depto.' : 'Error'})
+                                </span>
+                              </span>
+                              <span className="font-semibold text-emerald-700 ml-2 whitespace-nowrap">
+                                +{c.delta} ({c.deltaPct > 0 ? '+' : ''}
+                                {c.deltaPct}%)
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {changes.decreases.length > 0 && (
+                      <div className="bg-rose-50 rounded-lg p-4 border border-rose-200">
+                        <div className="flex items-center gap-2 mb-3">
+                          <TrendingDown className="text-rose-600" size={18} />
+                          <p className="font-semibold text-rose-900 text-sm">Principales disminuciones</p>
+                        </div>
+                        <div className="space-y-2">
+                          {changes.decreases.map((c, i) => (
+                            <div key={i} className="flex justify-between items-center text-sm bg-white rounded p-2">
+                              <span className="text-slate-700 truncate flex-1">
+                                {c.entity}{' '}
+                                <span className="text-xs text-slate-400">
+                                  ({c.entityType === 'agency' ? 'Agencia' : c.entityType === 'department' ? 'Depto.' : 'Error'})
+                                </span>
+                              </span>
+                              <span className="font-semibold text-rose-700 ml-2 whitespace-nowrap">
+                                {c.delta} ({c.deltaPct}%)
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {keyFindings.length > 0 && (
+                <div className="card mb-8 bg-gradient-to-br from-amber-50 to-white border-amber-200">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Lightbulb className="text-amber-600" size={20} />
+                    <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Hallazgos clave</h3>
+                  </div>
+                  <ul className="space-y-3">
+                    {keyFindings.map((finding, i) => (
+                      <li
+                        key={i}
+                        className="flex items-start gap-3 bg-white rounded-lg p-3 border border-amber-100 text-sm text-slate-700 leading-relaxed"
+                      >
+                        <span className="text-amber-600 font-bold flex-shrink-0">{i + 1}.</span>
+                        <span>{finding}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 flex gap-3 text-sm text-slate-600">
                 <Info size={18} className="text-slate-400 flex-shrink-0 mt-0.5" />

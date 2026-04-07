@@ -11,6 +11,7 @@ export const MDA_COLUMNS = {
   agency: 'Custom field (Agencia que reporta)',
   reporter: 'Reporter',
   errorType: 'Tipo de Error',
+  department: 'Custom field (Departamento)',
 } as const
 
 export interface ParsedTicket {
@@ -21,6 +22,7 @@ export interface ParsedTicket {
   agency: string
   reporter: string
   errorType: string
+  department: string
   resolutionHours: number | null
 }
 
@@ -52,6 +54,7 @@ export function rowToTicket(row: Record<string, string>): ParsedTicket | null {
     agency: (row[MDA_COLUMNS.agency] ?? '').trim() || 'Sin agencia',
     reporter: (row[MDA_COLUMNS.reporter] ?? '').trim() || 'Sin reporter',
     errorType: (row[MDA_COLUMNS.errorType] ?? '').trim() || 'Sin clasificar',
+    department: (row[MDA_COLUMNS.department] ?? '').trim() || 'Sin departamento',
     resolutionHours,
   }
 }
@@ -109,12 +112,19 @@ export interface MonthMetrics {
   /** % tickets Done con cierre en ≤48h desde creación */
   pctResolvedWithin48h: number | null
   criticalCount: number
+  highUrgencyCount: number
+  mediumUrgencyCount: number
   topError: { name: string; count: number } | null
   topAgency: { name: string; count: number } | null
+  topDepartment: { name: string; count: number } | null
   topReporter: { name: string; count: number } | null
+  activeAgencies: number
+  activeDepartments: number
   byStatus: { label: string; count: number }[]
   byErrorType: { label: string; count: number }[]
   byAgency: { label: string; count: number }[]
+  byDepartment: { label: string; count: number }[]
+  byUrgency: { label: string; count: number }[]
   byReporter: { label: string; count: number }[]
   /** Semanas del mes (por día del mes 1–7, 8–14, …) */
   weeklyCreated: [number, number, number, number]
@@ -150,6 +160,8 @@ function buildMetrics(tickets: ParsedTicket[], monthKeyStr: string): MonthMetric
   const pctResolvedWithin48h = done ? Math.round((within48 / done) * 100) : null
 
   const criticalCount = tickets.filter(t => /cr[ií]tico/i.test(t.urgency)).length
+  const highUrgencyCount = tickets.filter(t => /alta/i.test(t.urgency)).length
+  const mediumUrgencyCount = tickets.filter(t => /media/i.test(t.urgency)).length
 
   const errMap = countBy(tickets.map(t => t.errorType))
   const topErrorEntry = [...errMap.entries()].sort((a, b) => b[1] - a[1])[0]
@@ -159,9 +171,16 @@ function buildMetrics(tickets: ParsedTicket[], monthKeyStr: string): MonthMetric
   const topAgencyEntry = [...agMap.entries()].sort((a, b) => b[1] - a[1])[0]
   const topAgency = topAgencyEntry ? { name: topAgencyEntry[0], count: topAgencyEntry[1] } : null
 
+  const deptMap = countBy(tickets.map(t => t.department))
+  const topDepartmentEntry = [...deptMap.entries()].sort((a, b) => b[1] - a[1])[0]
+  const topDepartment = topDepartmentEntry ? { name: topDepartmentEntry[0], count: topDepartmentEntry[1] } : null
+
   const repMap = countBy(tickets.map(t => t.reporter))
   const topReporterEntry = [...repMap.entries()].sort((a, b) => b[1] - a[1])[0]
   const topReporter = topReporterEntry ? { name: topReporterEntry[0], count: topReporterEntry[1] } : null
+
+  const activeAgencies = [...agMap.keys()].filter(k => k && k !== 'Sin agencia').length
+  const activeDepartments = [...deptMap.keys()].filter(k => k && k !== 'Sin departamento').length
 
   const statusMap = countBy(tickets.map(t => t.status))
   const byStatus = [...statusMap.entries()]
@@ -177,6 +196,16 @@ function buildMetrics(tickets: ParsedTicket[], monthKeyStr: string): MonthMetric
     .map(([label, count]) => ({ label, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 15)
+
+  const byDepartment = [...deptMap.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15)
+
+  const urgMap = countBy(tickets.map(t => t.urgency))
+  const byUrgency = [...urgMap.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
 
   const byReporter = [...repMap.entries()]
     .map(([label, count]) => ({ label, count }))
@@ -210,12 +239,19 @@ function buildMetrics(tickets: ParsedTicket[], monthKeyStr: string): MonthMetric
     medianResolutionHours,
     pctResolvedWithin48h,
     criticalCount,
+    highUrgencyCount,
+    mediumUrgencyCount,
     topError,
     topAgency,
+    topDepartment,
     topReporter,
+    activeAgencies,
+    activeDepartments,
     byStatus,
     byErrorType,
     byAgency,
+    byDepartment,
+    byUrgency,
     byReporter,
     weeklyCreated,
     resolutionBuckets,
@@ -234,4 +270,163 @@ export function buildMonthMetrics(all: ParsedTicket[], key: string): MonthMetric
 export function deltaPct(focus: number, ref: number): number | null {
   if (ref === 0) return null
   return Math.round(((focus - ref) / ref) * 100)
+}
+
+export interface ChangeInsight {
+  entity: string
+  entityType: 'agency' | 'department' | 'error'
+  currentCount: number
+  previousCount: number
+  delta: number
+  deltaPct: number
+}
+
+/** Detecta los cambios más significativos entre dos meses */
+export function detectChanges(current: MonthMetrics, previous: MonthMetrics): {
+  increases: ChangeInsight[]
+  decreases: ChangeInsight[]
+} {
+  const changes: ChangeInsight[] = []
+
+  const processCategory = (
+    currentList: { label: string; count: number }[],
+    previousList: { label: string; count: number }[],
+    type: 'agency' | 'department' | 'error',
+  ) => {
+    const prevMap = new Map(previousList.map(x => [x.label, x.count]))
+    currentList.forEach(curr => {
+      const prev = prevMap.get(curr.label) ?? 0
+      const delta = curr.count - prev
+      const pct = prev > 0 ? Math.round(((curr.count - prev) / prev) * 100) : 100
+      if (Math.abs(delta) >= 2) {
+        changes.push({
+          entity: curr.label,
+          entityType: type,
+          currentCount: curr.count,
+          previousCount: prev,
+          delta,
+          deltaPct: pct,
+        })
+      }
+    })
+  }
+
+  processCategory(current.byAgency, previous.byAgency, 'agency')
+  processCategory(current.byDepartment, previous.byDepartment, 'department')
+  processCategory(current.byErrorType, previous.byErrorType, 'error')
+
+  const sorted = [...changes].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+  return {
+    increases: sorted.filter(c => c.delta > 0).slice(0, 5),
+    decreases: sorted.filter(c => c.delta < 0).slice(0, 5),
+  }
+}
+
+/** Genera un párrafo narrativo determinístico basado en los datos */
+export function generateExecutiveSummary(current: MonthMetrics, previous: MonthMetrics | null): string {
+  const monthName = monthLabelEs(current.monthKey)
+  const parts: string[] = []
+
+  if (previous) {
+    const volDelta = current.total - previous.total
+    const volPct = deltaPct(current.total, previous.total)
+    if (volDelta > 0) {
+      parts.push(`se observó un incremento de ${volPct}% en tickets creados respecto al mes anterior (${volDelta} tickets adicionales)`)
+    } else if (volDelta < 0) {
+      parts.push(`se observó una disminución de ${Math.abs(volPct ?? 0)}% en tickets creados respecto al mes anterior (${Math.abs(volDelta)} tickets menos)`)
+    } else {
+      parts.push(`el volumen de tickets se mantuvo estable respecto al mes anterior`)
+    }
+  } else {
+    parts.push(`se registraron ${current.total} tickets`)
+  }
+
+  if (current.topAgency) {
+    const pct = Math.round((current.topAgency.count / current.total) * 100)
+    parts.push(`concentrándose ${pct}% en ${current.topAgency.name}`)
+  }
+
+  if (current.topError) {
+    parts.push(`con ${current.topError.name} como el tipo de incidencia más frecuente`)
+  }
+
+  const critPct = current.total > 0 ? Math.round((current.criticalCount / current.total) * 100) : 0
+  if (critPct >= 30) {
+    parts.push(`El ${critPct}% de los tickets fueron críticos, lo que requiere atención prioritaria`)
+  }
+
+  if (previous && current.resolutionRatePct < previous.resolutionRatePct - 5) {
+    parts.push(`La tasa de resolución disminuyó de ${previous.resolutionRatePct}% a ${current.resolutionRatePct}%`)
+  } else if (previous && current.resolutionRatePct > previous.resolutionRatePct + 5) {
+    parts.push(`La tasa de resolución mejoró de ${previous.resolutionRatePct}% a ${current.resolutionRatePct}%`)
+  }
+
+  const cap = monthName.charAt(0).toUpperCase() + monthName.slice(1)
+  return `En ${cap} ${parts.join(', ')}.`
+}
+
+/** Genera hallazgos clave determinísticamente */
+export function generateKeyFindings(current: MonthMetrics, previous: MonthMetrics | null): string[] {
+  const findings: string[] = []
+
+  if (previous) {
+    const volDelta = current.total - previous.total
+    const volPct = deltaPct(current.total, previous.total) ?? 0
+    if (Math.abs(volPct) >= 10) {
+      findings.push(
+        `Volumen mensual ${volDelta > 0 ? 'aumentó' : 'disminuyó'} ${Math.abs(volPct)}% (${Math.abs(volDelta)} tickets)`,
+      )
+    }
+
+    const resDelta = current.resolutionRatePct - previous.resolutionRatePct
+    if (Math.abs(resDelta) >= 5) {
+      findings.push(
+        `Tasa de resolución ${resDelta > 0 ? 'mejoró' : 'empeoró'} ${Math.abs(resDelta)} puntos porcentuales`,
+      )
+    }
+
+    if (
+      current.avgResolutionHours != null &&
+      previous.avgResolutionHours != null &&
+      Math.abs(current.avgResolutionHours - previous.avgResolutionHours) >= 6
+    ) {
+      const diff = current.avgResolutionHours - previous.avgResolutionHours
+      findings.push(
+        `Tiempo promedio de resolución ${diff > 0 ? 'aumentó' : 'disminuyó'} ${Math.abs(diff).toFixed(1)} horas`,
+      )
+    }
+  }
+
+  const critPct = current.total > 0 ? Math.round((current.criticalCount / current.total) * 100) : 0
+  if (critPct >= 25) {
+    findings.push(`${critPct}% de tickets fueron críticos, indicando alta presión operativa`)
+  } else if (critPct < 10) {
+    findings.push(`Solo ${critPct}% de tickets fueron críticos, reflejando operación estable`)
+  }
+
+  if (current.topAgency) {
+    const concPct = Math.round((current.topAgency.count / current.total) * 100)
+    if (concPct >= 30) {
+      findings.push(`${current.topAgency.name} concentró ${concPct}% del total (${current.topAgency.count} tickets)`)
+    }
+  }
+
+  if (current.topError && current.total > 0) {
+    const errPct = Math.round((current.topError.count / current.total) * 100)
+    if (errPct >= 20) {
+      findings.push(`${current.topError.name} representa ${errPct}% de las incidencias`)
+    }
+  }
+
+  if (current.pctResolvedWithin48h != null && current.pctResolvedWithin48h >= 70) {
+    findings.push(`${current.pctResolvedWithin48h}% de tickets se resolvieron en menos de 48 horas (buen SLA)`)
+  } else if (current.pctResolvedWithin48h != null && current.pctResolvedWithin48h < 50) {
+    findings.push(`Solo ${current.pctResolvedWithin48h}% de tickets se resolvieron en 48h, sugeriendo posibles cuellos de botella`)
+  }
+
+  if (findings.length === 0) {
+    findings.push('Operación dentro de parámetros esperados sin variaciones significativas')
+  }
+
+  return findings.slice(0, 5)
 }
