@@ -15,7 +15,7 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
   const supabase = createClient()
   const [meeting, setMeeting] = useState<any>(null)
   const [actionItems, setActionItems] = useState<any[]>([])
-  const [newItem, setNewItem] = useState('')
+  const [newItem, setNewItem] = useState({ text: '', due_date: '', priority: 'media' })
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [content, setContent] = useState('')
@@ -38,14 +38,19 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
   }
 
   async function addItem() {
-    if (!newItem.trim()) return
+    if (!newItem.text.trim()) return
     const { data } = await supabase.from('action_items').insert({
       meeting_id: id,
       client_id: meeting?.client?.id ?? null,
-      text: newItem.trim(),
+      text: newItem.text.trim(),
+      due_date: newItem.due_date || null,
+      priority: newItem.priority || 'media',
       ...dbFieldsForStatus('todo'),
     }).select().single()
-    if (data) { setActionItems(prev => [...prev, data]); setNewItem('') }
+    if (data) { 
+      setActionItems(prev => [...prev, data])
+      setNewItem({ text: '', due_date: '', priority: 'media' })
+    }
   }
 
   async function toggleItem(itemId: string, done: boolean) {
@@ -109,18 +114,73 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
             {total > 0 && <div className="h-1.5 bg-slate-100 rounded-full mb-4 overflow-hidden"><div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${(done/total)*100}%` }} /></div>}
             <ul className="space-y-2 mb-4">
               {actionItems.map(item => (
-                <li key={item.id} className="flex items-center gap-3 group">
-                  <button onClick={() => toggleItem(item.id, item.done)} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${item.done ? 'bg-teal-500 border-teal-500 text-white' : 'border-slate-300 hover:border-teal-400'}`}>
-                    {item.done && <Check size={11} />}
-                  </button>
-                  <span className={`text-sm flex-1 ${item.done ? 'line-through text-slate-400' : 'text-slate-700'}`}>{item.text}</span>
-                  <button onClick={() => deleteItem(item.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 transition-all"><Trash2 size={14} /></button>
+                <li key={item.id} className="group">
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => toggleItem(item.id, item.done)} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${item.done ? 'bg-teal-500 border-teal-500 text-white' : 'border-slate-300 hover:border-teal-400'}`}>
+                      {item.done && <Check size={11} />}
+                    </button>
+                    <div className="flex-1">
+                      <span className={`text-sm ${item.done ? 'line-through text-slate-400' : 'text-slate-700'}`}>{item.text}</span>
+                      {(item.priority || item.due_date) && (
+                        <div className="flex gap-2 mt-1">
+                          {item.priority && (
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                              item.priority === 'alta' ? 'bg-red-100 text-red-700' :
+                              item.priority === 'media' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-green-100 text-green-700'
+                            }`}>
+                              {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                            </span>
+                          )}
+                          {item.due_date && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-blue-50 text-blue-700">
+                              📅 {format(new Date(item.due_date), 'd MMM yyyy', { locale: es })}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <button onClick={() => deleteItem(item.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 transition-all"><Trash2 size={14} /></button>
+                  </div>
                 </li>
               ))}
             </ul>
-            <div className="flex gap-2 pt-3 border-t border-slate-100">
-              <input className="input text-sm" placeholder="Agregar pendiente..." value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem())} />
-              <button onClick={addItem} className="btn-primary flex items-center gap-1.5 text-sm py-2 px-3 whitespace-nowrap"><Plus size={14} />Agregar</button>
+            <div className="pt-3 border-t border-slate-100 space-y-2">
+              <input 
+                className="input text-sm w-full" 
+                placeholder="Descripción del pendiente..." 
+                value={newItem.text} 
+                onChange={e => setNewItem(prev => ({ ...prev, text: e.target.value }))} 
+                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem())} 
+              />
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs text-slate-500 mb-1 block">Fecha de entrega</label>
+                  <input 
+                    type="date" 
+                    className="input text-sm w-full" 
+                    value={newItem.due_date} 
+                    onChange={e => setNewItem(prev => ({ ...prev, due_date: e.target.value }))}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-slate-500 mb-1 block">Prioridad</label>
+                  <select 
+                    className="input text-sm w-full" 
+                    value={newItem.priority} 
+                    onChange={e => setNewItem(prev => ({ ...prev, priority: e.target.value }))}
+                  >
+                    <option value="baja">Baja</option>
+                    <option value="media">Media</option>
+                    <option value="alta">Alta</option>
+                  </select>
+                </div>
+                <div className="self-end">
+                  <button onClick={addItem} className="btn-primary flex items-center gap-1.5 text-sm py-2 px-3 whitespace-nowrap h-[38px]">
+                    <Plus size={14} />Agregar
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

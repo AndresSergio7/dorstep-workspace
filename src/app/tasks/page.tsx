@@ -16,6 +16,8 @@ type Row = {
   meeting_id: string | null
   client_id: string | null
   created_at: string
+  due_date: string | null
+  priority: string | null
   client: { name: string } | null
   meeting: { id: string; title: string; date: string } | null
 }
@@ -38,7 +40,7 @@ export default function TasksPage() {
     const client = createClient()
     const { data, error } = await client
       .from('action_items')
-      .select('id, text, status, done, meeting_id, client_id, created_at, client:clients(name), meeting:meetings(id, title, date)')
+      .select('id, text, status, done, meeting_id, client_id, created_at, due_date, priority, client:clients(name), meeting:meetings(id, title, date)')
       .order('created_at', { ascending: true })
     if (error) {
       setLoadError(error.message)
@@ -154,6 +156,25 @@ export default function TasksPage() {
                       <GripVertical size={16} className="text-slate-300 flex-shrink-0 mt-0.5" aria-hidden />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-slate-800 leading-snug">{item.text}</p>
+                        
+                        {/* Priority & Due Date */}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {item.priority && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                              item.priority === 'alta' ? 'bg-red-100 text-red-700' :
+                              item.priority === 'media' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-green-100 text-green-700'
+                            }`}>
+                              {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                            </span>
+                          )}
+                          {item.due_date && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-700">
+                              📅 {format(new Date(item.due_date), 'd MMM yyyy', { locale: es })}
+                            </span>
+                          )}
+                        </div>
+
                         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
                           {item.client?.name && <span>{item.client.name}</span>}
                           {item.meeting && (

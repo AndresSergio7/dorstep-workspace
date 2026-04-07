@@ -14,13 +14,17 @@ function NewMeetingForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [clients, setClients] = useState<any[]>([])
-  const [actionItems, setActionItems] = useState<string[]>([''])
+  const [actionItems, setActionItems] = useState<Array<{ text: string; due_date: string; priority: string }>>([
+    { text: '', due_date: '', priority: 'media' }
+  ])
   const [form, setForm] = useState({ client_id: searchParams.get('client') ?? '', title: '', date: new Date().toISOString().split('T')[0], attendees: '', content: '' })
 
   useEffect(() => { supabase.from('clients').select('id, name').order('name').then(({ data }) => setClients(data ?? [])) }, [])
   function set(f: string, v: string) { setForm(prev => ({ ...prev, [f]: v })) }
-  function setItem(i: number, v: string) { setActionItems(prev => prev.map((x, j) => j === i ? v : x)) }
-  function addItem() { setActionItems(prev => [...prev, '']) }
+  function setItem(i: number, field: 'text' | 'due_date' | 'priority', value: string) { 
+    setActionItems(prev => prev.map((x, j) => j === i ? { ...x, [field]: value } : x)) 
+  }
+  function addItem() { setActionItems(prev => [...prev, { text: '', due_date: '', priority: 'media' }]) }
   function removeItem(i: number) { setActionItems(prev => prev.filter((_, j) => j !== i)) }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -48,13 +52,15 @@ function NewMeetingForm() {
         return
       }
       
-      const items = actionItems.filter(t => t.trim())
+      const items = actionItems.filter(t => t.text.trim())
       if (items.length) {
         const { error: itemsError } = await supabase.from('action_items').insert(
-          items.map(text => ({
+          items.map(item => ({
             meeting_id: meeting.id,
             client_id: form.client_id || null,
-            text: text.trim(),
+            text: item.text.trim(),
+            due_date: item.due_date || null,
+            priority: item.priority || 'media',
             ...dbFieldsForStatus('todo'),
           })),
         )
@@ -92,9 +98,43 @@ function NewMeetingForm() {
           <div className="card space-y-3">
             <div className="flex items-center justify-between"><label className="label">Pendientes</label><button type="button" onClick={addItem} className="text-xs text-blue-600 hover:underline flex items-center gap-1"><Plus size={13} />Agregar</button></div>
             {actionItems.map((item, idx) => (
-              <div key={idx} className="flex gap-2">
-                <input className="input" value={item} onChange={e => setItem(idx, e.target.value)} placeholder={`Pendiente ${idx + 1}`} />
-                {actionItems.length > 1 && <button type="button" onClick={() => removeItem(idx)} className="text-slate-400 hover:text-red-500"><Trash2 size={15} /></button>}
+              <div key={idx} className="flex flex-col gap-2 p-3 bg-slate-50 rounded-lg">
+                <div className="flex gap-2">
+                  <input 
+                    className="input flex-1" 
+                    value={item.text} 
+                    onChange={e => setItem(idx, 'text', e.target.value)} 
+                    placeholder={`Pendiente ${idx + 1}`} 
+                  />
+                  {actionItems.length > 1 && (
+                    <button type="button" onClick={() => removeItem(idx)} className="text-slate-400 hover:text-red-500 px-2">
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Fecha de entrega</label>
+                    <input 
+                      type="date" 
+                      className="input text-sm" 
+                      value={item.due_date} 
+                      onChange={e => setItem(idx, 'due_date', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Prioridad</label>
+                    <select 
+                      className="input text-sm" 
+                      value={item.priority} 
+                      onChange={e => setItem(idx, 'priority', e.target.value)}
+                    >
+                      <option value="baja">Baja</option>
+                      <option value="media">Media</option>
+                      <option value="alta">Alta</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             ))}
           </div>

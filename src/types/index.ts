@@ -31,6 +31,7 @@ export interface ActionItem {
   done: boolean
   status?: ActionItemStatus | null
   due_date: string | null
+  priority: 'baja' | 'media' | 'alta' | null
   created_at: string
   client?: Pick<Client, 'id' | 'name'>
   meeting?: Pick<Meeting, 'id' | 'title' | 'date'>
