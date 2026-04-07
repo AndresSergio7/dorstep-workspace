@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback, useEffect, type ReactNode } from 'react'
 import Papa from 'papaparse'
-import { Upload, BarChart3, Info, Download, TrendingUp, TrendingDown, AlertCircle, Lightbulb } from 'lucide-react'
+import { Upload, BarChart3, Info, Download, TrendingUp, TrendingDown, AlertCircle, Lightbulb, Save } from 'lucide-react'
 import {
   rowToTicket,
   distinctMonthKeys,
@@ -17,6 +17,7 @@ import {
 } from '@/lib/mda-analytics'
 import { buildMdaExportHtml } from '@/lib/mda-report-html'
 import { cn } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 
 function capitalizeMonth(s: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
@@ -103,10 +104,14 @@ function CompareList({
   currentList,
   prevList,
   limit,
+  currentLabel,
+  prevLabel,
 }: {
   currentList: { label: string; count: number }[]
   prevList: { label: string; count: number }[]
   limit: number
+  currentLabel?: string
+  prevLabel?: string
 }) {
   const allKeys = new Set([...currentList.map(x => x.label), ...prevList.map(x => x.label)])
   const compared = [...allKeys].map(key => {
@@ -132,7 +137,7 @@ function CompareList({
                 <div
                   className="h-full bg-emerald-500 transition-all"
                   style={{ width: `${(row.curr / maxVal) * 100}%` }}
-                  title="Mes actual"
+                  title={currentLabel || 'Mes actual'}
                 />
               </div>
               <span className="text-xs font-semibold text-emerald-700 w-8 text-right tabular-nums">{row.curr}</span>
@@ -142,7 +147,7 @@ function CompareList({
                 <div
                   className="h-full bg-slate-400 transition-all"
                   style={{ width: `${(row.prev / maxVal) * 100}%` }}
-                  title="Mes anterior"
+                  title={prevLabel || 'Mes anterior'}
                 />
               </div>
               <span className="text-xs text-slate-600 w-8 text-right tabular-nums">{row.prev}</span>
@@ -152,10 +157,10 @@ function CompareList({
       ))}
       <div className="flex gap-4 text-xs pt-2 border-t border-slate-100">
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded bg-emerald-500" /> Mes actual
+          <span className="w-3 h-3 rounded bg-emerald-500" /> {currentLabel || 'Mes actual'}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded bg-slate-400" /> Mes anterior
+          <span className="w-3 h-3 rounded bg-slate-400" /> {prevLabel || 'Mes anterior'}
         </span>
       </div>
     </div>
@@ -163,6 +168,7 @@ function CompareList({
 }
 
 export default function MdaCsvDashboard() {
+  const supabase = createClient()
   const [tickets, setTickets] = useState<ParsedTicket[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
@@ -170,6 +176,10 @@ export default function MdaCsvDashboard() {
   const [refKey, setRefKey] = useState<string>('')
   const [exportTitle, setExportTitle] = useState('Análisis MDA — tickets Jira')
   const [exportPeriod, setExportPeriod] = useState('')
+  const [showSaveForm, setShowSaveForm] = useState(false)
+  const [clients, setClients] = useState<any[]>([])
+  const [saveForm, setSaveForm] = useState({ client_id: '', title: '', period: '' })
+  const [saving, setSaving] = useState(false)
 
   const monthOptions = useMemo(() => distinctMonthKeys(tickets), [tickets])
 
@@ -177,6 +187,9 @@ export default function MdaCsvDashboard() {
     if (typeof window !== 'undefined' && window.location.hash === '#mda') {
       document.getElementById('mda')?.scrollIntoView({ behavior: 'smooth' })
     }
+    supabase.from('clients').select('id, name').order('name').then(({ data }) => {
+      setClients(data ?? [])
+    })
   }, [])
 
   const onFile = useCallback((file: File | null) => {
@@ -240,6 +253,38 @@ export default function MdaCsvDashboard() {
     a.download = `${safe}.html`
     a.click()
     URL.revokeObjectURL(a.href)
+  }
+
+  async function saveReport() {
+    if (!focus || !saveForm.title.trim()) return
+    setSaving(true)
+    try {
+      const html = buildMdaExportHtml(focus, refM, {
+        title: saveForm.title.trim(),
+        periodNote: saveForm.period.trim() || undefined,
+      })
+      const { data, error } = await supabase
+        .from('reports')
+        .insert({
+          client_id: saveForm.client_id || null,
+          title: saveForm.title.trim(),
+          period: saveForm.period.trim() || null,
+          html_content: html,
+        })
+        .select()
+        .single()
+      
+      if (error) throw error
+      
+      setShowSaveForm(false)
+      setSaveForm({ client_id: '', title: '', period: '' })
+      alert('Reporte guardado exitosamente')
+    } catch (err) {
+      console.error('Error guardando reporte:', err)
+      alert('Error al guardar el reporte')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -329,10 +374,75 @@ export default function MdaCsvDashboard() {
                     />
                   </div>
                 </div>
-                <button type="button" onClick={downloadExport} className="btn-primary inline-flex items-center gap-2">
-                  <Download size={16} />
-                  Descargar HTML (para enviar o imprimir)
-                </button>
+                <div className="flex gap-3">
+                  <button type="button" onClick={downloadExport} className="btn-primary inline-flex items-center gap-2">
+                    <Download size={16} />
+                    Descargar HTML
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowSaveForm(!showSaveForm)} 
+                    className="btn-secondary inline-flex items-center gap-2"
+                  >
+                    <Save size={16} />
+                    Guardar reporte
+                  </button>
+                </div>
+                
+                {showSaveForm && (
+                  <div className="mt-4 p-4 bg-white rounded-lg border border-slate-200 space-y-3">
+                    <p className="text-sm font-semibold text-slate-700">Guardar en reportes</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="label">Título *</label>
+                        <input
+                          className="input bg-slate-50"
+                          required
+                          value={saveForm.title}
+                          onChange={e => setSaveForm(p => ({ ...p, title: e.target.value }))}
+                          placeholder="Ej. MDA Continental — marzo 2026"
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Cliente</label>
+                        <select 
+                          className="input bg-slate-50" 
+                          value={saveForm.client_id} 
+                          onChange={e => setSaveForm(p => ({ ...p, client_id: e.target.value }))}
+                        >
+                          <option value="">Sin cliente</option>
+                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="label">Período</label>
+                        <input
+                          className="input bg-slate-50"
+                          value={saveForm.period}
+                          onChange={e => setSaveForm(p => ({ ...p, period: e.target.value }))}
+                          placeholder="Ej. Febrero – Marzo 2026"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+                      <button 
+                        type="button" 
+                        onClick={() => setShowSaveForm(false)} 
+                        className="btn-secondary text-sm"
+                      >
+                        Cancelar
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={saveReport} 
+                        className="btn-primary text-sm"
+                        disabled={saving || !saveForm.title.trim()}
+                      >
+                        {saving ? 'Guardando...' : 'Guardar'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -536,7 +646,13 @@ export default function MdaCsvDashboard() {
                     <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">
                       Tickets por urgencia: comparativo
                     </h3>
-                    <CompareList currentList={focus.byUrgency} prevList={refM.byUrgency} limit={5} />
+                    <CompareList 
+                      currentList={focus.byUrgency} 
+                      prevList={refM.byUrgency} 
+                      limit={5}
+                      currentLabel={capitalizeMonth(monthLabelEs(focus.monthKey))}
+                      prevLabel={capitalizeMonth(monthLabelEs(refM.monthKey))}
+                    />
                   </div>
                 </div>
               )}
@@ -547,7 +663,13 @@ export default function MdaCsvDashboard() {
                     {refM ? 'Top 5 agencias: comparativo' : 'Por agencia (mes actual)'}
                   </h3>
                   {refM ? (
-                    <CompareList currentList={focus.byAgency} prevList={refM.byAgency} limit={5} />
+                    <CompareList 
+                      currentList={focus.byAgency} 
+                      prevList={refM.byAgency} 
+                      limit={5}
+                      currentLabel={capitalizeMonth(monthLabelEs(focus.monthKey))}
+                      prevLabel={capitalizeMonth(monthLabelEs(refM.monthKey))}
+                    />
                   ) : (
                     <HorizontalBars items={focus.byAgency} maxItems={10} barClass="bg-amber-500" />
                   )}
@@ -557,7 +679,13 @@ export default function MdaCsvDashboard() {
                     {refM ? 'Top 5 tipos de error: comparativo' : 'Tipo de error (mes actual)'}
                   </h3>
                   {refM ? (
-                    <CompareList currentList={focus.byErrorType} prevList={refM.byErrorType} limit={5} />
+                    <CompareList 
+                      currentList={focus.byErrorType} 
+                      prevList={refM.byErrorType} 
+                      limit={5}
+                      currentLabel={capitalizeMonth(monthLabelEs(focus.monthKey))}
+                      prevLabel={capitalizeMonth(monthLabelEs(refM.monthKey))}
+                    />
                   ) : (
                     <HorizontalBars items={focus.byErrorType} maxItems={10} barClass="bg-violet-500" />
                   )}
@@ -570,7 +698,13 @@ export default function MdaCsvDashboard() {
                     {refM ? 'Tickets por departamento: comparativo' : 'Por departamento (mes actual)'}
                   </h3>
                   {refM ? (
-                    <CompareList currentList={focus.byDepartment} prevList={refM.byDepartment} limit={6} />
+                    <CompareList 
+                      currentList={focus.byDepartment} 
+                      prevList={refM.byDepartment} 
+                      limit={6}
+                      currentLabel={capitalizeMonth(monthLabelEs(focus.monthKey))}
+                      prevLabel={capitalizeMonth(monthLabelEs(refM.monthKey))}
+                    />
                   ) : (
                     <HorizontalBars items={focus.byDepartment} maxItems={8} barClass="bg-cyan-500" />
                   )}
