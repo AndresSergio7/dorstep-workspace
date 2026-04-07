@@ -174,12 +174,10 @@ export default function MdaCsvDashboard() {
   const [fileName, setFileName] = useState<string | null>(null)
   const [focusKey, setFocusKey] = useState<string>('')
   const [refKey, setRefKey] = useState<string>('')
-  const [exportTitle, setExportTitle] = useState('Análisis MDA — tickets Jira')
-  const [exportPeriod, setExportPeriod] = useState('')
-  const [showSaveForm, setShowSaveForm] = useState(false)
   const [clients, setClients] = useState<any[]>([])
   const [saveForm, setSaveForm] = useState({ client_id: '', title: '', period: '' })
   const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   const monthOptions = useMemo(() => distinctMonthKeys(tickets), [tickets])
 
@@ -194,6 +192,7 @@ export default function MdaCsvDashboard() {
 
   const onFile = useCallback((file: File | null) => {
     setParseError(null)
+    setSaveSuccess(false)
     if (!file) return
     setFileName(file.name)
     Papa.parse<Record<string, string>>(file, {
@@ -213,6 +212,14 @@ export default function MdaCsvDashboard() {
         if (keys.length) {
           setFocusKey(keys[0])
           setRefKey(keys[1] ?? '')
+          // Auto-populate form with smart defaults
+          const focusMonth = monthLabelEs(keys[0])
+          const refMonth = keys[1] ? monthLabelEs(keys[1]) : ''
+          setSaveForm({
+            client_id: '',
+            title: `Reporte MDA — ${focusMonth}`,
+            period: refMonth ? `${refMonth} vs ${focusMonth}` : focusMonth
+          })
         } else {
           setFocusKey('')
           setRefKey('')
@@ -240,30 +247,17 @@ export default function MdaCsvDashboard() {
     return detectChanges(focus, refM)
   }, [focus, refM])
 
-  function downloadExport() {
-    if (!focus) return
-    const html = buildMdaExportHtml(focus, refM, {
-      title: exportTitle.trim() || 'Análisis MDA',
-      periodNote: exportPeriod.trim() || undefined,
-    })
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    const safe = (exportTitle.trim() || 'reporte-mda').replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]/g, '')
-    a.download = `${safe}.html`
-    a.click()
-    URL.revokeObjectURL(a.href)
-  }
-
-  async function saveReport() {
+  async function saveReport(e: React.FormEvent) {
+    e.preventDefault()
     if (!focus || !saveForm.title.trim()) return
     setSaving(true)
+    setSaveSuccess(false)
     try {
       const html = buildMdaExportHtml(focus, refM, {
         title: saveForm.title.trim(),
         periodNote: saveForm.period.trim() || undefined,
       })
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('reports')
         .insert({
           client_id: saveForm.client_id || null,
@@ -271,181 +265,164 @@ export default function MdaCsvDashboard() {
           period: saveForm.period.trim() || null,
           html_content: html,
         })
-        .select()
-        .single()
       
       if (error) throw error
       
-      setShowSaveForm(false)
-      setSaveForm({ client_id: '', title: '', period: '' })
-      alert('Reporte guardado exitosamente')
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 5000)
     } catch (err) {
       console.error('Error guardando reporte:', err)
-      alert('Error al guardar el reporte')
+      alert('Error al guardar el reporte. Por favor intenta de nuevo.')
     } finally {
       setSaving(false)
     }
   }
 
+  function downloadExport() {
+    if (!focus) return
+    const html = buildMdaExportHtml(focus, refM, {
+      title: saveForm.title.trim() || 'Análisis MDA',
+      periodNote: saveForm.period.trim() || undefined,
+    })
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    const safe = (saveForm.title.trim() || 'reporte-mda').replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]/g, '')
+    a.download = `${safe}.html`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   return (
     <section id="mda" className="scroll-mt-6 pb-2">
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6 mb-6">
-        <div>
-          <div className="flex items-center gap-2 text-slate-500 text-sm mb-1">
-            <BarChart3 size={18} />
-            <span>Análisis MDA (CSV Jira)</span>
-          </div>
-          <h2 className="text-xl font-bold text-[#0f1f3d]">Tickets mes principal vs. referencia</h2>
-          <p className="text-slate-500 text-sm mt-2 max-w-2xl">
-            El <strong className="text-slate-700">mes principal</strong> es el que verás destacado; el{' '}
-            <strong className="text-slate-700">mes de referencia</strong> solo sirve para comparar (por ejemplo el mes
-            anterior). Exporta el HTML para compartirlo con tu cliente.
-          </p>
-        </div>
-        <label className="btn-primary flex items-center gap-2 cursor-pointer shrink-0 self-start">
-          <Upload size={16} />
-          Cargar CSV
-          <input type="file" accept=".csv,text/csv" className="hidden" onChange={e => onFile(e.target.files?.[0] ?? null)} />
-        </label>
-      </div>
-
-      {parseError && (
-        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm px-4 py-3">{parseError}</div>
-      )}
-
       {!tickets.length ? (
-        <div className="card border-dashed border-2 text-center py-12 text-slate-500">
-          <Upload className="mx-auto mb-3 text-slate-300" size={36} />
-          <p className="font-medium">Sube el CSV exportado desde Jira</p>
-          <p className="text-sm mt-2 max-w-md mx-auto">
-            Columnas esperadas: Created, Updated, Status, Tipo de Error, Agencia que reporta, Reporter, etc.
+        <div className="card border-dashed border-2 text-center py-16 text-slate-500">
+          <Upload className="mx-auto mb-4 text-slate-300" size={48} />
+          <h3 className="text-lg font-semibold text-slate-700 mb-2">Carga tu archivo CSV de Jira</h3>
+          <p className="text-sm mb-6 max-w-md mx-auto">
+            Arrastra y suelta o haz click para seleccionar el archivo CSV exportado desde Jira
           </p>
+          <label className="btn-primary inline-flex items-center gap-2 cursor-pointer">
+            <Upload size={18} />
+            Seleccionar CSV
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={e => onFile(e.target.files?.[0] ?? null)} />
+          </label>
         </div>
       ) : (
         <>
-          <div className="flex flex-col gap-4 mb-6">
-            <div className="flex flex-col sm:flex-row flex-wrap gap-4 items-end">
+          {parseError && (
+            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm px-4 py-3">{parseError}</div>
+          )}
+
+          {saveSuccess && (
+            <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-900 text-sm px-4 py-3 flex items-center gap-2">
+              <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>✓ Reporte guardado exitosamente. Puedes verlo en la sección de reportes guardados.</span>
+            </div>
+          )}
+
+          <form onSubmit={saveReport} className="card bg-gradient-to-br from-blue-50 to-white border-blue-200 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Configurar reporte</h3>
+                <p className="text-sm text-slate-500 mt-1">Completa la información y guarda para generar el reporte</p>
+              </div>
+              <label className="btn-secondary text-sm cursor-pointer">
+                <Upload size={14} className="inline mr-1" />
+                Cambiar CSV
+                <input type="file" accept=".csv,text/csv" className="hidden" onChange={e => onFile(e.target.files?.[0] ?? null)} />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div className="md:col-span-2">
+                <label className="label">Título del reporte *</label>
+                <input
+                  type="text"
+                  required
+                  className="input bg-white"
+                  value={saveForm.title}
+                  onChange={e => setSaveForm(p => ({ ...p, title: e.target.value }))}
+                  placeholder="Ej. Reporte MDA — marzo 2026"
+                />
+              </div>
+              <div>
+                <label className="label">Cliente</label>
+                <select
+                  className="input bg-white"
+                  value={saveForm.client_id}
+                  onChange={e => setSaveForm(p => ({ ...p, client_id: e.target.value }))}
+                >
+                  <option value="">Sin cliente</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="label">Mes principal</label>
-                <select className="input bg-white min-w-[220px]" value={focusKey} onChange={e => setFocusKey(e.target.value)}>
+                <select className="input bg-white" value={focusKey} onChange={e => setFocusKey(e.target.value)}>
                   {monthOptions.map(k => (
-                    <option key={k} value={k}>
-                      {capitalizeMonth(monthLabelEs(k))}
-                    </option>
+                    <option key={k} value={k}>{capitalizeMonth(monthLabelEs(k))}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="label">Mes de referencia</label>
-                <select className="input bg-white min-w-[220px]" value={refKey} onChange={e => setRefKey(e.target.value)}>
+                <label className="label">Mes de comparación</label>
+                <select className="input bg-white" value={refKey} onChange={e => setRefKey(e.target.value)}>
                   <option value="">Sin comparar</option>
-                  {monthOptions
-                    .filter(k => k !== focusKey)
-                    .map(k => (
-                      <option key={k} value={k}>
-                        {capitalizeMonth(monthLabelEs(k))}
-                      </option>
-                    ))}
+                  {monthOptions.filter(k => k !== focusKey).map(k => (
+                    <option key={k} value={k}>{capitalizeMonth(monthLabelEs(k))}</option>
+                  ))}
                 </select>
               </div>
-              {fileName && <p className="text-xs text-slate-400 sm:ml-auto">Archivo: {fileName}</p>}
+              <div>
+                <label className="label">Período (opcional)</label>
+                <input
+                  type="text"
+                  className="input bg-white"
+                  value={saveForm.period}
+                  onChange={e => setSaveForm(p => ({ ...p, period: e.target.value }))}
+                  placeholder="Ej. Febrero vs Marzo 2026"
+                />
+              </div>
             </div>
 
-            {focus && (
-              <div className="card border-emerald-200 bg-emerald-50/30 space-y-3">
-                <p className="text-xs font-bold uppercase tracking-wide text-emerald-900">Exportar para el cliente</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="label">Título del informe</label>
-                    <input
-                      className="input bg-white"
-                      value={exportTitle}
-                      onChange={e => setExportTitle(e.target.value)}
-                      placeholder="Ej. Mesa de ayuda — marzo 2026"
-                    />
-                  </div>
-                  <div>
-                    <label className="label">Nota de período (opcional)</label>
-                    <input
-                      className="input bg-white"
-                      value={exportPeriod}
-                      onChange={e => setExportPeriod(e.target.value)}
-                      placeholder="Ej. Comparativo febrero vs marzo 2026"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <button type="button" onClick={downloadExport} className="btn-primary inline-flex items-center gap-2">
-                    <Download size={16} />
-                    Descargar HTML
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={() => setShowSaveForm(!showSaveForm)} 
-                    className="btn-secondary inline-flex items-center gap-2"
-                  >
-                    <Save size={16} />
+            <div className="flex gap-3 pt-4 border-t border-blue-100">
+              <button
+                type="submit"
+                disabled={saving || !saveForm.title.trim()}
+                className="btn-primary"
+              >
+                {saving ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <Save size={16} className="inline mr-1" />
                     Guardar reporte
-                  </button>
-                </div>
-                
-                {showSaveForm && (
-                  <div className="mt-4 p-4 bg-white rounded-lg border border-slate-200 space-y-3">
-                    <p className="text-sm font-semibold text-slate-700">Guardar en reportes</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="label">Título *</label>
-                        <input
-                          className="input bg-slate-50"
-                          required
-                          value={saveForm.title}
-                          onChange={e => setSaveForm(p => ({ ...p, title: e.target.value }))}
-                          placeholder="Ej. MDA Continental — marzo 2026"
-                        />
-                      </div>
-                      <div>
-                        <label className="label">Cliente</label>
-                        <select 
-                          className="input bg-slate-50" 
-                          value={saveForm.client_id} 
-                          onChange={e => setSaveForm(p => ({ ...p, client_id: e.target.value }))}
-                        >
-                          <option value="">Sin cliente</option>
-                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="label">Período</label>
-                        <input
-                          className="input bg-slate-50"
-                          value={saveForm.period}
-                          onChange={e => setSaveForm(p => ({ ...p, period: e.target.value }))}
-                          placeholder="Ej. Febrero – Marzo 2026"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
-                      <button 
-                        type="button" 
-                        onClick={() => setShowSaveForm(false)} 
-                        className="btn-secondary text-sm"
-                      >
-                        Cancelar
-                      </button>
-                      <button 
-                        type="button" 
-                        onClick={saveReport} 
-                        className="btn-primary text-sm"
-                        disabled={saving || !saveForm.title.trim()}
-                      >
-                        {saving ? 'Guardando...' : 'Guardar'}
-                      </button>
-                    </div>
-                  </div>
+                  </>
                 )}
-              </div>
-            )}
-          </div>
+              </button>
+              <button
+                type="button"
+                onClick={downloadExport}
+                className="btn-secondary"
+                disabled={!focus}
+              >
+                <Download size={16} className="inline mr-1" />
+                Descargar HTML
+              </button>
+            </div>
+          </form>
 
           {focus && (
             <>
