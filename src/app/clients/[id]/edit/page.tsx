@@ -15,7 +15,7 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
 
   useEffect(() => {
     supabase.from('clients').select('*').eq('id', id).single().then(({ data }) => {
-      if (data) setForm({ name: data.name ?? '', company: data.company ?? '', email: data.email ?? '', phone: data.phone ?? '', notes: data.notes ?? '', tags: (data.tags ?? []).join(', ') })
+      if (data) setForm({ name: data.name ?? '', company: data.company ?? '', email: data.contact_email ?? '', phone: data.contact_phone ?? '', notes: data.notes ?? '', tags: (data.tags ?? []).join(', ') })
     })
   }, [id])
 
@@ -25,7 +25,7 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
     e.preventDefault()
     setLoading(true)
     const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean)
-    await supabase.from('clients').update({ name: form.name, company: form.company || null, email: form.email || null, phone: form.phone || null, notes: form.notes || null, tags: tags.length ? tags : null }).eq('id', id)
+    await supabase.from('clients').update({ name: form.name, company: form.company || null, contact_email: form.email || null, contact_phone: form.phone || null, notes: form.notes || null, tags: tags.length ? tags : null }).eq('id', id)
     router.push(`/clients/${id}`)
   }
 

@@ -38,8 +38,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <div className="space-y-5">
             <div className="card space-y-3">
               <h2 className="section-title">Contacto</h2>
-              {client.email && <p className="text-sm flex items-center gap-2 text-slate-600"><Mail size={14} className="text-slate-400" />{client.email}</p>}
-              {client.phone && <p className="text-sm flex items-center gap-2 text-slate-600"><Phone size={14} className="text-slate-400" />{client.phone}</p>}
+              {client.contact_email && <p className="text-sm flex items-center gap-2 text-slate-600"><Mail size={14} className="text-slate-400" />{client.contact_email}</p>}
+              {client.contact_phone && <p className="text-sm flex items-center gap-2 text-slate-600"><Phone size={14} className="text-slate-400" />{client.contact_phone}</p>}
               {client.tags?.length > 0 && <div className="flex flex-wrap gap-1">{client.tags.map((tag: string) => <span key={tag} className="badge bg-blue-50 text-blue-600"><Tag size={10} className="mr-1" />{tag}</span>)}</div>}
               {client.notes && <div className="pt-2 border-t border-slate-100"><p className="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Notas</p><p className="text-sm text-slate-600 whitespace-pre-wrap">{client.notes}</p></div>}
             </div>

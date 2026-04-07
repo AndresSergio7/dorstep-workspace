@@ -21,8 +21,8 @@ export default function NewClientPage() {
     try {
       const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean)
       const { data, error: insertError } = await supabase.from('clients').insert({
-        name: form.name.trim(), company: form.company.trim() || null, email: form.email.trim() || null,
-        phone: form.phone.trim() || null, notes: form.notes.trim() || null, tags: tags.length ? tags : null,
+        name: form.name.trim(), company: form.company.trim() || null, contact_email: form.email.trim() || null,
+        contact_phone: form.phone.trim() || null, notes: form.notes.trim() || null, tags: tags.length ? tags : null,
       }).select('id')
       if (insertError) {
         setError(insertError.message)
