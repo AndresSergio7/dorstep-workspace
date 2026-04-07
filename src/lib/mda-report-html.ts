@@ -196,21 +196,15 @@ table.wk th{color:#64748b;font-size:11px;text-transform:uppercase;font-weight:70
     ${kpiWithDelta('Tickets mes actual', focus.total, refM?.total)}
     ${kpiWithDelta('Tickets cerrados', focus.done, refM?.done)}
     ${kpi('Tasa de cierre', `${focus.resolutionRatePct}%`, refM ? `Mes anterior: ${refM.resolutionRatePct}%` : undefined)}
-    ${kpi('Agencias activas', String(focus.activeAgencies))}
-    ${kpi('Departamentos activos', String(focus.activeDepartments))}
     ${kpi('Tickets críticos', String(focus.criticalCount), refM ? `Mes anterior: ${refM.criticalCount}` : undefined)}
-    ${kpi('Urgencia alta', String(focus.highUrgencyCount))}
+    ${kpi('Cerrados en ≤48 h', esc(pct48), refM?.pctResolvedWithin48h != null ? `Ref.: ${refM.pctResolvedWithin48h}%` : undefined)}
     ${kpi('Error principal', esc(focus.topError?.name.substring(0, 28) ?? '—'), focus.topError ? `${focus.topError.count} tickets` : undefined)}
+    ${kpi('Tiempo medio cierre', esc(fmtH(focus.avgResolutionHours)), refM && refM.avgResolutionHours ? `Ref.: ${fmtH(refM.avgResolutionHours)}` : undefined)}
+    ${kpi('Agencia líder', esc(focus.topAgency?.name.substring(0, 24) ?? '—'), focus.topAgency ? `${focus.topAgency.count} tickets` : undefined)}
   </div>
   <div class="narrative">${esc(narrative)}</div>
 </div>
-<div class="kpis">
-  ${kpi('Tiempo medio cierre', esc(fmtH(focus.avgResolutionHours)), refM && refM.avgResolutionHours ? `Ref.: ${fmtH(refM.avgResolutionHours)}` : undefined)}
-  ${kpi('Mediana cierre', esc(fmtH(focus.medianResolutionHours)), refM && refM.medianResolutionHours ? `Ref.: ${fmtH(refM.medianResolutionHours)}` : undefined)}
-  ${kpi('Cerrados en ≤48 h', esc(pct48), refM?.pctResolvedWithin48h != null ? `Ref.: ${refM.pctResolvedWithin48h}%` : undefined)}
-  ${kpi('Agencia líder', esc(focus.topAgency?.name.substring(0, 24) ?? '—'), focus.topAgency ? `${focus.topAgency.count} tickets` : undefined)}
-</div>
-${refM ? `<div class="sec"><h3>Comparativo total: ${esc(focusLabel)} vs. ${esc(refLabel)}</h3>${compareBarTable('Total', [{ label: focusLabel, count: focus.total }], [{ label: refLabel, count: refM.total }], 2)}<div class="legend"><div class="legend-item"><div class="legend-box" style="background:#10b981"></div><span>${esc(focusLabel)}</span></div><div class="legend-item"><div class="legend-box" style="background:#94a3b8"></div><span>${esc(refLabel)}</span></div></div></div>` : ''}
+${refM ? `<div class="sec" style="background:#f0fdf4;border-color:#bbf7d0"><h3>Comparativo total: ${esc(focusLabel)} vs. ${esc(refLabel)}</h3><div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:16px"><div><p style="font-size:10px;font-weight:700;text-transform:uppercase;color:#059669;margin-bottom:8px">${esc(focusLabel)}</p><p style="font-size:32px;font-weight:700;color:#059669;margin-bottom:4px">${focus.total}</p><p style="font-size:11px;color:#64748b">Tickets creados</p></div><div><p style="font-size:10px;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:8px">${esc(refLabel)}</p><p style="font-size:32px;font-weight:700;color:#64748b;margin-bottom:4px">${refM.total}</p><p style="font-size:11px;color:#64748b">Tickets creados</p></div></div><div style="padding-top:12px;border-top:1px solid #d1fae5"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:#334155">Variación:</span><span style="font-size:16px;font-weight:700;color:${focus.total > refM.total ? '#d97706' : '#059669'}">${focus.total > refM.total ? '+' : ''}${focus.total - refM.total} tickets (${focus.total > refM.total ? '+' : ''}${((focus.total - refM.total) / refM.total * 100).toFixed(1)}%)</span></div></div></div>` : ''}
 <div class="sec"><h3>Evolución semanal — tickets creados (${esc(focusLabel)})</h3>
 <table class="wk"><thead><tr><th>Semana</th><th>${esc(focusLabel)}</th>${refM ? `<th>${esc(refLabel)}</th>` : ''}</tr></thead><tbody>${weeklyRows}</tbody></table>
 </div>

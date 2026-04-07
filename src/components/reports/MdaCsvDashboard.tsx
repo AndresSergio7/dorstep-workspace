@@ -503,7 +503,7 @@ export default function MdaCsvDashboard() {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                 <KpiCard title="Tickets mes actual" focus={focus.total} refVal={refM?.total} suffix="" />
                 <KpiCard title="Tickets cerrados" focus={focus.done} refVal={refM?.done} suffix="" />
                 <KpiCard
@@ -543,11 +543,6 @@ export default function MdaCsvDashboard() {
                   }
                   invertDeltaGood
                 />
-                <KpiCard
-                  title="Mediana hasta cierre"
-                  focusLabel={formatHours(focus.medianResolutionHours)}
-                  refLabel={refM ? formatHours(refM.medianResolutionHours) : undefined}
-                />
                 <KpiCard title="Tickets críticos" focus={focus.criticalCount} refVal={refM?.criticalCount} suffix="" />
                 <KpiCard
                   title="Cerrados en ≤48 h"
@@ -556,8 +551,6 @@ export default function MdaCsvDashboard() {
                   }
                   refLabel={refM?.pctResolvedWithin48h != null ? `${refM.pctResolvedWithin48h}%` : undefined}
                 />
-                <KpiCard title="Agencias activas" focus={focus.activeAgencies} suffix="" />
-                <KpiCard title="Departamentos activos" focus={focus.activeDepartments} suffix="" />
                 <KpiCard
                   title="Error más frecuente"
                   custom={
@@ -586,62 +579,91 @@ export default function MdaCsvDashboard() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                <div className="card">
-                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">Evolución semanal (creados)</h3>
-                  <p className="text-xs text-slate-500 mb-4">Semanas por día del mes: 1–7, 8–14, 15–21, 22+</p>
-                  {refM ? (
-                    <div className="space-y-4">
-                      {['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4'].map((label, i) => (
-                        <BarCompare key={label} label={label} focusVal={focus.weeklyCreated[i]} refVal={refM.weeklyCreated[i]} />
-                      ))}
-                      <div className="flex gap-4 text-xs pt-2 border-t border-slate-100">
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-3 h-3 rounded bg-emerald-500" /> Principal
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-3 h-3 rounded bg-slate-400" /> Referencia
-                        </span>
-                      </div>
+              <div className="card mb-8">
+                <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">Evolución semanal (creados)</h3>
+                <p className="text-xs text-slate-500 mb-4">Semanas por día del mes: 1–7, 8–14, 15–21, 22+</p>
+                {refM ? (
+                  <div className="space-y-4">
+                    {['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4'].map((label, i) => (
+                      <BarCompare key={label} label={label} focusVal={focus.weeklyCreated[i]} refVal={refM.weeklyCreated[i]} />
+                    ))}
+                    <div className="flex gap-4 text-xs pt-2 border-t border-slate-100">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-emerald-500" /> {capitalizeMonth(monthLabelEs(focus.monthKey))}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-slate-400" /> {capitalizeMonth(monthLabelEs(refM.monthKey))}
+                      </span>
                     </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      {focus.weeklyCreated.map((n, i) => (
-                        <div key={i} className="flex-1 text-center">
-                          <div className="h-24 bg-slate-100 rounded-lg flex items-end justify-center p-1">
-                            <div
-                              className="w-full bg-emerald-500 rounded-md transition-all"
-                              style={{ height: `${(n / Math.max(...focus.weeklyCreated, 1)) * 100}%` }}
-                            />
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1">S{i + 1}</p>
-                          <p className="text-sm font-semibold">{n}</p>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    {focus.weeklyCreated.map((n, i) => (
+                      <div key={i} className="flex-1 text-center">
+                        <div className="h-24 bg-slate-100 rounded-lg flex items-end justify-center p-1">
+                          <div
+                            className="w-full bg-emerald-500 rounded-md transition-all"
+                            style={{ height: `${(n / Math.max(...focus.weeklyCreated, 1)) * 100}%` }}
+                          />
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="card">
-                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">Estado (mes principal)</h3>
-                  <HorizontalBars items={focus.byStatus} barClass="bg-sky-500" />
-                </div>
+                        <p className="text-xs text-slate-500 mt-1">S{i + 1}</p>
+                        <p className="text-sm font-semibold">{n}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
+              {!refM && (
+                <div className="card mb-8">
+                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">Estado (mes actual)</h3>
+                  <HorizontalBars items={focus.byStatus} barClass="bg-sky-500" />
+                </div>
+              )}
+
               {refM && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <div className="mb-8">
                   <div className="card">
                     <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">
                       Total tickets: comparativo mes a mes
                     </h3>
-                    <div className="space-y-4">
-                      <BarCompare
-                        label={capitalizeMonth(monthLabelEs(focus.monthKey))}
-                        focusVal={focus.total}
-                        refVal={refM.total}
-                      />
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2">
+                          {capitalizeMonth(monthLabelEs(focus.monthKey))}
+                        </p>
+                        <p className="text-4xl font-bold text-emerald-700">{focus.total}</p>
+                        <p className="text-xs text-slate-500 mt-1">Tickets creados</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                          {capitalizeMonth(monthLabelEs(refM.monthKey))}
+                        </p>
+                        <p className="text-4xl font-bold text-slate-600">{refM.total}</p>
+                        <p className="text-xs text-slate-500 mt-1">Tickets creados</p>
+                      </div>
+                    </div>
+                    <div className="mt-6 pt-4 border-t border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600">Variación:</span>
+                        <span
+                          className={cn(
+                            'text-lg font-bold',
+                            focus.total > refM.total ? 'text-amber-600' : 'text-emerald-600',
+                          )}
+                        >
+                          {focus.total > refM.total ? '+' : ''}
+                          {focus.total - refM.total} tickets ({focus.total > refM.total ? '+' : ''}
+                          {((focus.total - refM.total) / refM.total * 100).toFixed(1)}%)
+                        </span>
+                      </div>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {refM && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                   <div className="card">
                     <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">
                       Tickets por urgencia: comparativo
@@ -653,6 +675,10 @@ export default function MdaCsvDashboard() {
                       currentLabel={capitalizeMonth(monthLabelEs(focus.monthKey))}
                       prevLabel={capitalizeMonth(monthLabelEs(refM.monthKey))}
                     />
+                  </div>
+                  <div className="card">
+                    <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">Estado (mes actual)</h3>
+                    <HorizontalBars items={focus.byStatus} barClass="bg-sky-500" />
                   </div>
                 </div>
               )}
