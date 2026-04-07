@@ -1,5 +1,6 @@
 'use client'
 import AppLayout from '@/components/layout/AppLayout'
+import MdaCsvDashboard from '@/components/reports/MdaCsvDashboard'
 import { createClient } from '@/lib/supabase/client'
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
@@ -111,54 +112,66 @@ export default function ReportsPage() {
 
   return (
     <AppLayout>
-      <div className="max-w-4xl">
-        <div className="flex items-center justify-between mb-8">
-          <div><h1 className="page-title">Reportes</h1><p className="text-slate-500 text-sm mt-1">Genera y comparte reportes con tus clientes</p></div>
-          <button onClick={() => setShowForm(!showForm)} className="btn-primary flex items-center gap-2"><Plus size={16} />Generar reporte</button>
+      <div className="max-w-6xl">
+        <div className="mb-6">
+          <h1 className="page-title">Reportes</h1>
+          <p className="text-slate-500 text-sm mt-1">Análisis MDA desde CSV, informes guardados y enlaces para clientes</p>
         </div>
-        {showForm && (
-          <form onSubmit={handleCreate} className="card mb-6 space-y-4 border-blue-200 bg-blue-50/20">
-            <h2 className="font-semibold text-slate-700">Nuevo reporte</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2"><label className="label">Título *</label><input className="input bg-white" required value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Reporte Mensual Grupo Continental" /></div>
-              <div><label className="label">Cliente</label><select className="input bg-white" value={form.client_id} onChange={e => setForm(p => ({ ...p, client_id: e.target.value }))}><option value="">Sin cliente</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-              <div><label className="label">Período</label><input className="input bg-white" value={form.period} onChange={e => setForm(p => ({ ...p, period: e.target.value }))} placeholder="Febrero – Marzo 2026" /></div>
-              <div className="col-span-2"><label className="label">CSV de Jira *</label><input ref={fileRef} type="file" accept=".csv,.xlsx" required className="block w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#1a56db] file:text-white hover:file:bg-[#1648c4] file:cursor-pointer" /></div>
+
+        <MdaCsvDashboard />
+
+        <div className="border-t border-slate-200 pt-10 mt-12">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-lg font-bold text-[#0f1f3d]">Reportes guardados</h2>
+              <p className="text-slate-500 text-sm mt-1">Vista rápida desde CSV (sin análisis MDA) · link público opcional</p>
             </div>
-            <div className="flex justify-end gap-3 pt-2 border-t border-blue-100">
-              <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Cancelar</button>
-              <button type="submit" className="btn-primary" disabled={creating}>{creating ? 'Generando...' : 'Generar reporte'}</button>
-            </div>
-          </form>
-        )}
-        {loading ? <div className="text-slate-400 text-sm">Cargando...</div>
-        : !reports.length ? (
-          <div className="card text-center py-16"><BarChart3 size={40} className="text-slate-300 mx-auto mb-3" /><p className="text-slate-500 font-medium">Sin reportes</p><p className="text-slate-400 text-sm mt-1">Sube un CSV de Jira para generar un reporte</p></div>
-        ) : (
-          <div className="space-y-3">
-            {reports.map((r: any) => (
-              <div key={r.id} className="card flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-slate-800">{r.title}</p>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
-                    {r.client && <span>{r.client.name}</span>}
-                    {r.period && <span>{r.period}</span>}
-                    <span>{format(new Date(r.created_at), 'd MMM yyyy', { locale: es })}</span>
+            <button onClick={() => setShowForm(!showForm)} className="btn-primary flex items-center gap-2"><Plus size={16} />Nuevo reporte simple</button>
+          </div>
+          {showForm && (
+            <form onSubmit={handleCreate} className="card mb-6 space-y-4 border-blue-200 bg-blue-50/20">
+              <p className="font-semibold text-slate-700">Reporte básico (mismas columnas CSV)</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2"><label className="label">Título *</label><input className="input bg-white" required value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Reporte Mensual Grupo Continental" /></div>
+                <div><label className="label">Cliente</label><select className="input bg-white" value={form.client_id} onChange={e => setForm(p => ({ ...p, client_id: e.target.value }))}><option value="">Sin cliente</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                <div><label className="label">Período</label><input className="input bg-white" value={form.period} onChange={e => setForm(p => ({ ...p, period: e.target.value }))} placeholder="Febrero – Marzo 2026" /></div>
+                <div className="col-span-2"><label className="label">CSV de Jira *</label><input ref={fileRef} type="file" accept=".csv,.xlsx" required className="block w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#1a56db] file:text-white hover:file:bg-[#1648c4] file:cursor-pointer" /></div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2 border-t border-blue-100">
+                <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Cancelar</button>
+                <button type="submit" className="btn-primary" disabled={creating}>{creating ? 'Generando...' : 'Generar y guardar'}</button>
+              </div>
+            </form>
+          )}
+          {loading ? <div className="text-slate-400 text-sm">Cargando...</div>
+          : !reports.length ? (
+            <div className="card text-center py-12 max-w-2xl"><BarChart3 size={36} className="text-slate-300 mx-auto mb-3" /><p className="text-slate-500 font-medium">Sin reportes guardados</p><p className="text-slate-400 text-sm mt-1">Usa el formulario de arriba para crear uno a partir del CSV</p></div>
+          ) : (
+            <div className="space-y-3 max-w-4xl">
+              {reports.map((r: any) => (
+                <div key={r.id} className="card flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-slate-800">{r.title}</p>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
+                      {r.client && <span>{r.client.name}</span>}
+                      {r.period && <span>{r.period}</span>}
+                      <span>{format(new Date(r.created_at), 'd MMM yyyy', { locale: es })}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => downloadReport(r)} className="btn-secondary text-xs">Descargar</button>
+                    <button onClick={() => copyLink(r.share_token)} className="btn-secondary text-xs flex items-center gap-1.5">
+                      {copied === r.share_token ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+                      {copied === r.share_token ? 'Copiado' : 'Copiar link'}
+                    </button>
+                    <Link href={`/r/${r.share_token}`} target="_blank" className="btn-secondary text-xs flex items-center gap-1.5"><Share2 size={13} />Ver</Link>
+                    <button onClick={() => deleteReport(r.id)} className="text-slate-300 hover:text-red-400 transition-colors p-1"><Trash2 size={15} /></button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => downloadReport(r)} className="btn-secondary text-xs">Descargar</button>
-                  <button onClick={() => copyLink(r.share_token)} className="btn-secondary text-xs flex items-center gap-1.5">
-                    {copied === r.share_token ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
-                    {copied === r.share_token ? 'Copiado' : 'Copiar link'}
-                  </button>
-                  <Link href={`/r/${r.share_token}`} target="_blank" className="btn-secondary text-xs flex items-center gap-1.5"><Share2 size={13} />Ver</Link>
-                  <button onClick={() => deleteReport(r.id)} className="text-slate-300 hover:text-red-400 transition-colors p-1"><Trash2 size={15} /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </AppLayout>
   )
