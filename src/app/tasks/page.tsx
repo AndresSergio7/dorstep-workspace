@@ -15,6 +15,8 @@ type Row = {
   done?: boolean
   meeting_id: string | null
   client_id: string | null
+  due_date?: string | null
+  priority?: string | null
   created_at: string
   client: { name: string } | null
   meeting: { id: string; title: string; date: string } | null
@@ -31,25 +33,31 @@ export default function TasksPage() {
   const [items, setItems] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const [dragId, setDragId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [newText, setNewText] = useState('')
   const [newDate, setNewDate] = useState('')
   const [newPriority, setNewPriority] = useState<'baja' | 'media' | 'alta'>('media')
+  const [newClientId, setNewClientId] = useState('')
   const [adding, setAdding] = useState(false)
 
   const load = useCallback(async () => {
     setLoadError(null)
-    const { data, error } = await supabase
-      .from('action_items')
-      .select('id, text, status, done, meeting_id, client_id, created_at, client:clients(name), meeting:meetings(id, title, date)')
-      .order('created_at', { ascending: true })
+    const [{ data, error }, { data: clientData }] = await Promise.all([
+      supabase
+        .from('action_items')
+        .select('id, text, status, done, meeting_id, client_id, due_date, priority, created_at, client:clients(name), meeting:meetings(id, title, date)')
+        .order('created_at', { ascending: true }),
+      supabase.from('clients').select('id, name').order('name'),
+    ])
     if (error) {
       setLoadError(error.message)
       setItems([])
     } else {
       setItems((data as unknown as Row[]) ?? [])
     }
+    setClients(clientData ?? [])
     setLoading(false)
   }, [supabase])
 
@@ -67,7 +75,7 @@ export default function TasksPage() {
     const fields = dbFieldsForStatus('todo')
     const { data, error } = await supabase
       .from('action_items')
-      .insert({ text: newText.trim(), meeting_id: null, client_id: null, due_date: newDate || null, priority: newPriority, ...fields })
+      .insert({ text: newText.trim(), meeting_id: null, client_id: newClientId || null, due_date: newDate || null, priority: newPriority, ...fields })
       .select('id, text, status, done, meeting_id, client_id, created_at, due_date, priority, client:clients(name), meeting:meetings(id, title, date)')
       .single()
     if (!error && data) {
@@ -75,6 +83,7 @@ export default function TasksPage() {
       setNewText('')
       setNewDate('')
       setNewPriority('media')
+      setNewClientId('')
       setShowForm(false)
     }
     setAdding(false)
@@ -144,6 +153,13 @@ export default function TasksPage() {
                 autoFocus
               />
               <div className="flex gap-3 flex-wrap">
+                <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
+                  <label className="text-xs font-medium text-slate-500">Cliente</label>
+                  <select className="input text-sm" value={newClientId} onChange={e => setNewClientId(e.target.value)} disabled={adding}>
+                    <option value="">Sin cliente</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
                 <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
                   <label className="text-xs font-medium text-slate-500">Fecha límite</label>
                   <input
@@ -223,6 +239,18 @@ export default function TasksPage() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-slate-800 leading-snug">{item.text}</p>
                         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+                          {item.priority && (
+                            <span className={`px-1.5 py-0.5 rounded font-medium ${
+                              item.priority === 'alta' ? 'bg-red-100 text-red-700'
+                              : item.priority === 'media' ? 'bg-amber-100 text-amber-700'
+                              : 'bg-emerald-100 text-emerald-700'
+                            }`}>
+                              {item.priority === 'alta' ? 'Alta' : item.priority === 'media' ? 'Media' : 'Baja'}
+                            </span>
+                          )}
+                          {item.due_date && (
+                            <span className="text-slate-500">{format(new Date(item.due_date + 'T00:00:00'), 'd MMM yyyy', { locale: es })}</span>
+                          )}
                           {item.client?.name && <span>{item.client.name}</span>}
                           {item.meeting && (
                             <Link href={`/meetings/${item.meeting.id}`} className="inline-flex items-center gap-0.5 text-blue-600 hover:underline">
