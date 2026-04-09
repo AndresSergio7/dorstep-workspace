@@ -15,6 +15,9 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
   const [meeting, setMeeting] = useState<any>(null)
   const [actionItems, setActionItems] = useState<any[]>([])
   const [newItem, setNewItem] = useState('')
+  const [newDate, setNewDate] = useState('')
+  const [newPriority, setNewPriority] = useState<'baja' | 'media' | 'alta'>('media')
+  const [showForm, setShowForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [content, setContent] = useState('')
@@ -38,8 +41,17 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
 
   async function addItem() {
     if (!newItem.trim()) return
-    const { data } = await supabase.from('action_items').insert({ meeting_id: id, client_id: meeting?.client?.id ?? null, text: newItem.trim() }).select().single()
-    if (data) { setActionItems(prev => [...prev, data]); setNewItem('') }
+    const { data } = await supabase
+      .from('action_items')
+      .insert({ meeting_id: id, client_id: meeting?.client?.id ?? null, text: newItem.trim(), due_date: newDate || null, priority: newPriority })
+      .select().single()
+    if (data) {
+      setActionItems(prev => [...prev, data])
+      setNewItem('')
+      setNewDate('')
+      setNewPriority('media')
+      setShowForm(false)
+    }
   }
 
   async function toggleItem(itemId: string, done: boolean) {
@@ -111,9 +123,63 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
                 </li>
               ))}
             </ul>
-            <div className="flex gap-2 pt-3 border-t border-slate-100">
-              <input className="input text-sm" placeholder="Agregar pendiente..." value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addItem())} />
-              <button onClick={addItem} className="btn-primary flex items-center gap-1.5 text-sm py-2 px-3 whitespace-nowrap"><Plus size={14} />Agregar</button>
+            <div className="pt-3 border-t border-slate-100">
+              {!showForm ? (
+                <button onClick={() => setShowForm(true)} className="btn-primary flex items-center gap-1.5 text-sm py-2 px-4">
+                  <Plus size={14} />Agregar pendiente
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <textarea
+                    className="input text-sm w-full resize-none"
+                    placeholder="Descripción del pendiente..."
+                    rows={2}
+                    value={newItem}
+                    onChange={e => setNewItem(e.target.value)}
+                    autoFocus
+                  />
+                  <div className="flex gap-3 flex-wrap">
+                    <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
+                      <label className="text-xs font-medium text-slate-500">Fecha límite</label>
+                      <input
+                        type="date"
+                        className="input text-sm"
+                        value={newDate}
+                        onChange={e => setNewDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium text-slate-500">Prioridad</label>
+                      <div className="flex gap-1.5">
+                        {(['baja', 'media', 'alta'] as const).map(p => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setNewPriority(p)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                              newPriority === p
+                                ? p === 'baja' ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                                  : p === 'media' ? 'bg-amber-100 border-amber-300 text-amber-800'
+                                  : 'bg-red-100 border-red-300 text-red-800'
+                                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                            }`}
+                          >
+                            {p === 'baja' ? 'Baja' : p === 'media' ? 'Media' : 'Alta'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={addItem} disabled={!newItem.trim()} className="btn-primary flex items-center gap-1.5 text-sm py-2 px-4 disabled:opacity-50">
+                      <Plus size={14} />Agregar
+                    </button>
+                    <button onClick={() => { setShowForm(false); setNewItem(''); setNewDate(''); setNewPriority('media') }} className="btn-secondary text-sm py-2 px-4">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
