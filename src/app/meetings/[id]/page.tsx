@@ -114,12 +114,30 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
             {total > 0 && <div className="h-1.5 bg-slate-100 rounded-full mb-4 overflow-hidden"><div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${(done/total)*100}%` }} /></div>}
             <ul className="space-y-2 mb-4">
               {actionItems.map(item => (
-                <li key={item.id} className="flex items-center gap-3 group">
-                  <button onClick={() => toggleItem(item.id, item.done)} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${item.done ? 'bg-teal-500 border-teal-500 text-white' : 'border-slate-300 hover:border-teal-400'}`}>
+                <li key={item.id} className="flex items-start gap-3 group">
+                  <button onClick={() => toggleItem(item.id, item.done)} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${item.done ? 'bg-teal-500 border-teal-500 text-white' : 'border-slate-300 hover:border-teal-400'}`}>
                     {item.done && <Check size={11} />}
                   </button>
-                  <span className={`text-sm flex-1 ${item.done ? 'line-through text-slate-400' : 'text-slate-700'}`}>{item.text}</span>
-                  <button onClick={() => deleteItem(item.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 transition-all"><Trash2 size={14} /></button>
+                  <div className="flex-1 min-w-0">
+                    <span className={`text-sm ${item.done ? 'line-through text-slate-400' : 'text-slate-700'}`}>{item.text}</span>
+                    {(item.priority || item.due_date) && (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-xs">
+                        {item.priority && (
+                          <span className={`px-1.5 py-0.5 rounded font-medium ${
+                            item.priority === 'alta' ? 'bg-red-100 text-red-700'
+                            : item.priority === 'media' ? 'bg-amber-100 text-amber-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                          }`}>
+                            {item.priority === 'alta' ? 'Alta' : item.priority === 'media' ? 'Media' : 'Baja'}
+                          </span>
+                        )}
+                        {item.due_date && (
+                          <span className="text-slate-400">{format(new Date(item.due_date + 'T00:00:00'), 'd MMM yyyy', { locale: es })}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => deleteItem(item.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 transition-all mt-0.5"><Trash2 size={14} /></button>
                 </li>
               ))}
             </ul>
