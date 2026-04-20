@@ -24,7 +24,7 @@ export default function ClientsPage() {
     return clients.filter(c =>
       c.name?.toLowerCase().includes(q) ||
       c.company?.toLowerCase().includes(q) ||
-      c.email?.toLowerCase().includes(q)
+      c.contact_email?.toLowerCase().includes(q)
     )
   }, [clients, search])
 
@@ -76,7 +76,7 @@ export default function ClientsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-4 text-slate-400 text-sm">
-                  {client.email && <span className="flex items-center gap-1"><Mail size={13} />{client.email}</span>}
+                  {client.contact_email && <span className="flex items-center gap-1"><Mail size={13} />{client.contact_email}</span>}
                   {client.tags?.length > 0 && <div className="flex gap-1">{client.tags.slice(0, 2).map((tag: string) => <span key={tag} className="badge bg-blue-50 text-blue-600">{tag}</span>)}</div>}
                 </div>
               </Link>

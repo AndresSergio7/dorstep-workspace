@@ -11,11 +11,11 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
   const router = useRouter()
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ name: '', company: '', email: '', phone: '', notes: '', tags: '' })
+  const [form, setForm] = useState({ name: '', company: '', contact_email: '', contact_phone: '', notes: '', tags: '' })
 
   useEffect(() => {
     supabase.from('clients').select('*').eq('id', id).single().then(({ data }) => {
-      if (data) setForm({ name: data.name ?? '', company: data.company ?? '', email: data.email ?? '', phone: data.phone ?? '', notes: data.notes ?? '', tags: (data.tags ?? []).join(', ') })
+      if (data) setForm({ name: data.name ?? '', company: data.company ?? '', contact_email: data.contact_email ?? '', contact_phone: data.contact_phone ?? '', notes: data.notes ?? '', tags: (data.tags ?? []).join(', ') })
     })
   }, [id])
 
@@ -25,7 +25,7 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
     e.preventDefault()
     setLoading(true)
     const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean)
-    await supabase.from('clients').update({ name: form.name, company: form.company || null, email: form.email || null, phone: form.phone || null, notes: form.notes || null, tags: tags.length ? tags : null }).eq('id', id)
+    await supabase.from('clients').update({ name: form.name, company: form.company || null, contact_email: form.contact_email || null, contact_phone: form.contact_phone || null, notes: form.notes || null, tags: tags.length ? tags : null }).eq('id', id)
     router.push(`/clients/${id}`)
   }
 
@@ -46,8 +46,8 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2"><label className="label">Nombre *</label><input className="input" required value={form.name} onChange={e => set('name', e.target.value)} /></div>
             <div><label className="label">Empresa</label><input className="input" value={form.company} onChange={e => set('company', e.target.value)} /></div>
-            <div><label className="label">Correo</label><input className="input" type="email" value={form.email} onChange={e => set('email', e.target.value)} /></div>
-            <div><label className="label">Teléfono</label><input className="input" value={form.phone} onChange={e => set('phone', e.target.value)} /></div>
+            <div><label className="label">Correo</label><input className="input" type="email" value={form.contact_email} onChange={e => set('contact_email', e.target.value)} /></div>
+            <div><label className="label">Teléfono</label><input className="input" value={form.contact_phone} onChange={e => set('contact_phone', e.target.value)} /></div>
             <div><label className="label">Tags</label><input className="input" value={form.tags} onChange={e => set('tags', e.target.value)} /></div>
             <div className="col-span-2"><label className="label">Notas</label><textarea className="input min-h-[100px] resize-none" value={form.notes} onChange={e => set('notes', e.target.value)} /></div>
           </div>
