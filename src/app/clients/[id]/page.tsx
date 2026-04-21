@@ -2,18 +2,19 @@ import AppLayout from '@/components/layout/AppLayout'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Plus, CalendarDays, Lightbulb, CheckSquare, Building2, Mail, Phone, Tag } from 'lucide-react'
+import { ArrowLeft, Plus, CalendarDays, Lightbulb, CheckSquare, Building2, Mail, Phone, Tag, ClipboardList } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
-  const [{ data: client }, { data: meetings }, { data: problems }, { data: pending }] = await Promise.all([
+  const [{ data: client }, { data: meetings }, { data: problems }, { data: pending }, { data: kickoffs }] = await Promise.all([
     supabase.from('clients').select('*').eq('id', id).single(),
     supabase.from('meetings').select('*').eq('client_id', id).order('date', { ascending: false }),
     supabase.from('problems').select('*').eq('client_id', id).order('created_at', { ascending: false }),
     supabase.from('action_items').select('*').eq('client_id', id).eq('done', false),
+    supabase.from('kickoff_forms').select('id, title, status, created_at, updated_at').eq('client_id', id).order('updated_at', { ascending: false }),
   ])
   if (!client) notFound()
   return (
@@ -73,6 +74,25 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                   <Link key={p.id} href={`/problems/${p.id}`} className="block p-3 rounded-lg border border-slate-100 hover:border-amber-200 hover:bg-amber-50/30 transition-all">
                     <p className="text-sm font-medium text-slate-700">{p.title}</p>
                     <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{p.description}</p>
+                  </Link>
+                ))}</div>
+              )}
+            </div>
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2"><ClipboardList size={15} className="text-indigo-500" /><h2 className="section-title">Kickoff Forms ({kickoffs?.length ?? 0})</h2></div>
+                <Link href={`/clients/${client.id}/kickoff/new`} className="btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3"><Plus size={13} />Nuevo kickoff</Link>
+              </div>
+              {!kickoffs?.length ? <p className="text-slate-400 text-sm py-4 text-center">Sin kickoff forms</p> : (
+                <div className="space-y-2">{kickoffs.map((form: any) => (
+                  <Link key={form.id} href={`/clients/${client.id}/kickoff/${form.id}`} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">{form.title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Estado: {form.status === 'completed' ? 'Completado' : 'Borrador'} · Actualizado {format(new Date(form.updated_at), 'd MMM yyyy', { locale: es })}</p>
+                    </div>
+                    <span className={`badge ${form.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                      {form.status === 'completed' ? 'Completed' : 'Draft'}
+                    </span>
                   </Link>
                 ))}</div>
               )}

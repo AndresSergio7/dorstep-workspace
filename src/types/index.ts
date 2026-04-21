@@ -57,3 +57,15 @@ export interface Report {
   created_at: string
   client?: Client
 }
+
+export interface KickoffForm {
+  id: string
+  client_id: string
+  title: string
+  status: 'draft' | 'completed'
+  meeting_date: string | null
+  payload: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  client?: Pick<Client, 'id' | 'name'>
+}
