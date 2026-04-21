@@ -20,15 +20,47 @@ export default function NewClientPage() {
     setLoading(true)
     try {
       const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean)
-      const { data, error: insertError } = await supabase.from('clients').insert({
-        name: form.name.trim(), company: form.company.trim() || null, contact_email: form.email.trim() || null,
-        contact_phone: form.phone.trim() || null, notes: form.notes.trim() || null, tags: tags.length ? tags : null,
-      }).select('id')
-      if (insertError) {
-        setError(insertError.message)
-        return
+      const basePayload = {
+        name: form.name.trim(),
+        company: form.company.trim() || null,
+        notes: form.notes.trim() || null,
+        tags: tags.length ? tags : null,
       }
-      const id = data?.[0]?.id
+
+      // Try modern schema first (contact_email/contact_phone), then fallback.
+      let createdId: string | null = null
+      const firstAttempt = await supabase
+        .from('clients')
+        .insert({
+          ...basePayload,
+          contact_email: form.email.trim() || null,
+          contact_phone: form.phone.trim() || null,
+        })
+        .select('id')
+
+      if (firstAttempt.error && /contact_email|contact_phone/i.test(firstAttempt.error.message)) {
+        const fallbackAttempt = await supabase
+          .from('clients')
+          .insert({
+            ...basePayload,
+            email: form.email.trim() || null,
+            phone: form.phone.trim() || null,
+          })
+          .select('id')
+
+        if (fallbackAttempt.error) {
+          setError(fallbackAttempt.error.message)
+          return
+        }
+        createdId = fallbackAttempt.data?.[0]?.id ?? null
+      } else if (firstAttempt.error) {
+        setError(firstAttempt.error.message)
+        return
+      } else {
+        createdId = firstAttempt.data?.[0]?.id ?? null
+      }
+
+      const id = createdId
       if (id) {
         router.push(`/clients/${id}`)
         router.refresh()
