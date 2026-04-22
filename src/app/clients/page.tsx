@@ -38,22 +38,11 @@ export default function ClientsPage() {
           </div>
           <Link href="/clients/new" className="btn-primary flex items-center gap-2"><Plus size={16} />Nuevo cliente</Link>
         </div>
-
         <div className="relative mb-5">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          <input
-            className="input pl-9 pr-9 text-sm w-full"
-            placeholder="Buscar por nombre, empresa o email..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X size={14} />
-            </button>
-          )}
+          <input className="input pl-9 pr-9 text-sm w-full" placeholder="Buscar por nombre, empresa o email..." value={search} onChange={e => setSearch(e.target.value)} />
+          {search && (<button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={14} /></button>)}
         </div>
-
         {loading ? (
           <div className="text-slate-400 text-sm py-8">Cargando clientes...</div>
         ) : !filtered.length ? (
