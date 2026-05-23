@@ -25,7 +25,7 @@ function NewProblemForm() {
       client_id: form.client_id || null, title: form.title, description: form.description, solution: form.solution,
       tags: tags.length ? tags : null,
     }).select().single()
-    if (!error && data) router.push(`/problems/${data.id}`)
+    if (!error && data) router.push('/problems')
     setLoading(false)
   }
 

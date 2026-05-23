@@ -1,7 +1,7 @@
 'use client'
 import AppLayout from '@/components/layout/AppLayout'
 import { createClient } from '@/lib/supabase/client'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { LayoutList, GripVertical, ExternalLink, Plus, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
@@ -34,6 +34,9 @@ export default function TasksPage() {
   const [dragId, setDragId] = useState<string | null>(null)
   const [newText, setNewText] = useState('')
   const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null)
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -51,6 +54,13 @@ export default function TasksPage() {
   }, [supabase])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (editingId) {
+      editTextareaRef.current?.focus()
+      editTextareaRef.current?.select()
+    }
+  }, [editingId])
 
   const byColumn = useMemo(() => {
     const map: Record<TaskStatus, Row[]> = { todo: [], in_progress: [], done: [] }
@@ -77,6 +87,33 @@ export default function TasksPage() {
   async function deleteTask(id: string) {
     await supabase.from('action_items').delete().eq('id', id)
     setItems(prev => prev.filter(i => i.id !== id))
+  }
+
+  async function saveText(id: string, text: string) {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    const { error } = await supabase.from('action_items').update({ text: trimmed }).eq('id', id)
+    if (!error) setItems(prev => prev.map(i => (i.id === id ? { ...i, text: trimmed } : i)))
+  }
+
+  function startEdit(row: Row) {
+    setEditingId(row.id)
+    setEditDraft(row.text)
+  }
+
+  function cancelEdit(originalText: string) {
+    setEditDraft(originalText)
+    setEditingId(null)
+  }
+
+  function saveEdit(id: string, originalText: string) {
+    const draft = editDraft
+    if (!draft.trim()) {
+      cancelEdit(originalText)
+      return
+    }
+    if (draft !== originalText) void saveText(id, draft)
+    setEditingId(null)
   }
 
   async function moveToStatus(itemId: string, status: TaskStatus) {
@@ -115,7 +152,7 @@ export default function TasksPage() {
             </div>
             <div>
               <h1 className="page-title">Tasks</h1>
-              <p className="text-muted-foreground text-sm mt-0.5">Drag between columns to change status</p>
+              <p className="text-muted-foreground text-sm mt-0.5">Drag the handle between columns. Click a task to edit.</p>
             </div>
           </div>
         </div>
@@ -162,35 +199,96 @@ export default function TasksPage() {
                 {byColumn[col.status].map(item => (
                   <div
                     key={item.id}
-                    draggable
-                    onDragStart={e => onDragStart(e, item.id)}
-                    onDragEnd={onDragEnd}
-                    className={`bg-card border border-border rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:border-muted-foreground/30 transition-colors group ${
+                    className={`bg-card border border-border rounded-lg p-3 shadow-sm hover:border-muted-foreground/30 transition-colors group ${
                       dragId === item.id ? 'opacity-60 ring-2 ring-ring ring-offset-1 ring-offset-background' : ''
                     }`}
                   >
                     <div className="flex gap-2">
-                      <GripVertical size={16} className="text-muted-foreground/50 flex-shrink-0 mt-0.5" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-foreground leading-snug">{item.text}</p>
-                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                          {item.client?.name && <span>{item.client.name}</span>}
-                          {item.meeting && (
-                            <Link href={`/meetings/${item.meeting.id}`} className="inline-flex items-center gap-0.5 text-primary hover:underline">
-                              {item.meeting.title}<ExternalLink size={10} className="opacity-70" />
-                            </Link>
-                          )}
-                          {item.meeting?.date && (
-                            <span>· {format(new Date(item.meeting.date), 'd MMM yyyy', { locale: enUS })}</span>
-                          )}
-                        </div>
-                      </div>
                       <button
-                        onClick={() => deleteTask(item.id)}
-                        className="opacity-0 group-hover:opacity-100 text-muted-foreground/50 hover:text-red-400 transition-all flex-shrink-0"
+                        type="button"
+                        draggable
+                        onDragStart={e => onDragStart(e, item.id)}
+                        onDragEnd={onDragEnd}
+                        className="flex-shrink-0 px-0.5 py-0.5 cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground border-0 bg-transparent self-start mt-0.5"
+                        aria-label="Move task"
                       >
-                        <Trash2 size={14} />
+                        <GripVertical size={16} />
                       </button>
+                      <div className="min-w-0 flex-1">
+                        {editingId === item.id ? (
+                          <div className="space-y-2">
+                            <textarea
+                              ref={editTextareaRef}
+                              className="input text-sm min-h-[72px] resize-y w-full"
+                              value={editDraft}
+                              onChange={e => setEditDraft(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Escape') {
+                                  e.preventDefault()
+                                  cancelEdit(item.text)
+                                }
+                              }}
+                            />
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => saveEdit(item.id, item.text)}
+                                disabled={!editDraft.trim()}
+                                className="btn-primary text-xs py-1.5 px-2.5 disabled:opacity-50"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => cancelEdit(item.text)}
+                                className="text-xs text-muted-foreground hover:underline"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => startEdit(item)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                startEdit(item)
+                              }
+                            }}
+                            className="w-full text-left rounded-md hover:bg-muted/40 transition-colors -mx-1 px-1 py-0.5 cursor-pointer"
+                          >
+                            <p className="text-sm text-foreground leading-snug">{item.text}</p>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                              {item.client?.name && <span>{item.client.name}</span>}
+                              {item.meeting && (
+                                <Link
+                                  href={`/meetings/${item.meeting.id}`}
+                                  onClick={e => e.stopPropagation()}
+                                  className="inline-flex items-center gap-0.5 text-primary hover:underline"
+                                >
+                                  {item.meeting.title}<ExternalLink size={10} className="opacity-70" />
+                                </Link>
+                              )}
+                              {item.meeting?.date && (
+                                <span>· {format(new Date(item.meeting.date), 'd MMM yyyy', { locale: enUS })}</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {editingId !== item.id && (
+                        <button
+                          type="button"
+                          onClick={() => void deleteTask(item.id)}
+                          className="opacity-0 group-hover:opacity-100 text-muted-foreground/50 hover:text-red-400 transition-all flex-shrink-0 self-start"
+                          aria-label="Delete task"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

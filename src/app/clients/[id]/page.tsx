@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, Plus, CalendarDays, Lightbulb, CheckSquare, Building2, Mail, Phone, Tag } from 'lucide-react'
 import { format } from 'date-fns'
 import { enUS } from 'date-fns/locale'
+import ClientProblemsList from '@/components/problems/ClientProblemsList'
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -69,12 +70,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 <Link href={`/problems/new?client=${client.id}`} className="btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3"><Plus size={13} />Add</Link>
               </div>
               {!problems?.length ? <p className="text-muted-foreground text-sm py-4 text-center">No problems</p> : (
-                <div className="space-y-2">{problems.map((p: any) => (
-                  <Link key={p.id} href={`/problems/${p.id}`} className="block p-3 rounded-lg border border-border/60 hover:border-amber-200 hover:bg-amber-50/30 transition-all">
-                    <p className="text-sm font-medium text-foreground">{p.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{p.description}</p>
-                  </Link>
-                ))}</div>
+                <ClientProblemsList problems={problems} />
               )}
             </div>
           </div>

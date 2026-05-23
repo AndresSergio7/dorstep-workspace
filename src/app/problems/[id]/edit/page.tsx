@@ -26,7 +26,7 @@ export default function EditProblemPage({ params }: { params: Promise<{ id: stri
     e.preventDefault(); setLoading(true)
     const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean)
     await supabase.from('problems').update({ client_id: form.client_id || null, title: form.title, description: form.description, solution: form.solution, tags: tags.length ? tags : null }).eq('id', id)
-    router.push(`/problems/${id}`)
+    router.push('/problems')
   }
   async function handleDelete() {
     if (!confirm('Delete this problem?')) return
@@ -37,7 +37,7 @@ export default function EditProblemPage({ params }: { params: Promise<{ id: stri
   return (
     <AppLayout>
       <div className="max-w-2xl">
-        <div className="flex items-center gap-3 mb-8"><Link href={`/problems/${id}`} className="btn-secondary flex items-center gap-2"><ArrowLeft size={16} />Back</Link><h1 className="page-title">Edit problem</h1></div>
+        <div className="flex items-center gap-3 mb-8"><Link href="/problems" className="btn-secondary flex items-center gap-2"><ArrowLeft size={16} />Back</Link><h1 className="page-title">Edit problem</h1></div>
         <form onSubmit={handleSubmit} className="card space-y-5">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2"><label className="label">Title *</label><input className="input" required value={form.title} onChange={e => set('title', e.target.value)} /></div>
@@ -48,7 +48,7 @@ export default function EditProblemPage({ params }: { params: Promise<{ id: stri
           </div>
           <div className="flex justify-between pt-2 border-t border-border/60">
             <button type="button" onClick={handleDelete} className="btn-danger flex items-center gap-2"><Trash2 size={15} />Delete</button>
-            <div className="flex gap-3"><Link href={`/problems/${id}`} className="btn-secondary">Cancel</Link><button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Saving...' : 'Save'}</button></div>
+            <div className="flex gap-3"><Link href="/problems" className="btn-secondary">Cancel</Link><button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Saving...' : 'Save'}</button></div>
           </div>
         </form>
       </div>

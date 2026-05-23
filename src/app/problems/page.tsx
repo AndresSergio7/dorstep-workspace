@@ -3,30 +3,37 @@ import AppLayout from '@/components/layout/AppLayout'
 import { createClient } from '@/lib/supabase/client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Plus, Lightbulb, Search, Tag, ChevronRight } from 'lucide-react'
+import { Plus, Lightbulb, Search } from 'lucide-react'
+import ProblemCard from '@/components/problems/ProblemCard'
+import type { ProblemRow } from '@/components/problems/types'
 
 export default function ProblemsPage() {
   const supabase = createClient()
-  const [problems, setProblems] = useState<any[]>([])
+  const [problems, setProblems] = useState<ProblemRow[]>([])
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<any[]>([])
+  const [results, setResults] = useState<ProblemRow[]>([])
   const [loading, setLoading] = useState(true)
   const [searching, setSearching] = useState(false)
 
   useEffect(() => {
     supabase.from('problems').select('*, client:clients(name)').order('created_at', { ascending: false })
-      .then(({ data }) => { setProblems(data ?? []); setLoading(false) })
-  }, [])
+      .then(({ data }) => { setProblems((data as ProblemRow[]) ?? []); setLoading(false) })
+  }, [supabase])
 
   const search = useCallback(async (q: string) => {
     if (!q.trim()) { setResults([]); setSearching(false); return }
     setSearching(true)
     const { data } = await supabase.from('problems').select('*, client:clients(name)').or(`title.ilike.%${q}%,description.ilike.%${q}%,solution.ilike.%${q}%`).limit(6)
-    setResults(data ?? [])
+    setResults((data as ProblemRow[]) ?? [])
     setSearching(false)
-  }, [])
+  }, [supabase])
 
   useEffect(() => { const t = setTimeout(() => search(query), 300); return () => clearTimeout(t) }, [query, search])
+
+  function handleProblemUpdated(updated: ProblemRow) {
+    setProblems(prev => prev.map(p => p.id === updated.id ? updated : p))
+    setResults(prev => prev.map(p => p.id === updated.id ? updated : p))
+  }
 
   return (
     <AppLayout>
@@ -45,17 +52,7 @@ export default function ProblemsPage() {
             <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-3">{results.length} result{results.length !== 1 ? 's' : ''} for &quot;{query}&quot;</p>
             {results.length > 0 ? (
               <div className="space-y-3">
-                {results.map((p: any) => (
-                  <Link key={p.id} href={`/problems/${p.id}`} className="card block hover:border-amber-300 hover:shadow-md transition-all">
-                    <p className="font-semibold text-foreground">{p.title}</p>
-                    <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{p.description}</p>
-                    <div className="mt-2 p-2.5 bg-teal-50 border border-teal-100 rounded-lg">
-                      <p className="text-xs font-semibold text-teal-700 mb-1">✓ Solution</p>
-                      <p className="text-sm text-teal-800 line-clamp-2">{p.solution}</p>
-                    </div>
-                    {p.client && <p className="text-xs text-muted-foreground mt-2">{p.client.name}</p>}
-                  </Link>
-                ))}
+                {results.map(p => <ProblemCard key={p.id} problem={p} variant="search" onProblemUpdated={handleProblemUpdated} />)}
               </div>
             ) : (
               <div className="card text-center py-8">
@@ -75,22 +72,7 @@ export default function ProblemsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {problems.map((p: any) => (
-                <Link key={p.id} href={`/problems/${p.id}`} className="card hover:shadow-md transition-all hover:border-amber-200 flex items-center justify-between group">
-                  <div className="flex items-start gap-3 flex-1">
-                    <Lightbulb size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-foreground group-hover:text-amber-700">{p.title}</p>
-                      <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{p.description}</p>
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        {p.client && <span className="text-xs text-muted-foreground">{p.client.name}</span>}
-                        {p.tags?.map((tag: string) => <span key={tag} className="badge bg-amber-50 text-amber-600"><Tag size={9} className="mr-1" />{tag}</span>)}
-                      </div>
-                    </div>
-                  </div>
-                  <ChevronRight size={16} className="text-muted-foreground flex-shrink-0 ml-3" />
-                </Link>
-              ))}
+              {problems.map(p => <ProblemCard key={p.id} problem={p} onProblemUpdated={handleProblemUpdated} />)}
             </div>
           )
         )}
