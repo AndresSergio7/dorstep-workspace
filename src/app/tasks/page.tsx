@@ -128,6 +128,11 @@ export default function TasksPage() {
     setDragId(id)
     e.dataTransfer.setData('text/plain', id)
     e.dataTransfer.effectAllowed = 'move'
+    const card = (e.currentTarget as HTMLElement).closest('[data-task-card]') as HTMLElement | null
+    if (card) {
+      const rect = card.getBoundingClientRect()
+      e.dataTransfer.setDragImage(card, e.clientX - rect.left, e.clientY - rect.top)
+    }
   }
 
   function onDragEnd() { setDragId(null) }
@@ -199,6 +204,7 @@ export default function TasksPage() {
                 {byColumn[col.status].map(item => (
                   <div
                     key={item.id}
+                    data-task-card
                     className={`bg-card border border-border rounded-lg p-3 shadow-sm hover:border-muted-foreground/30 transition-colors group ${
                       dragId === item.id ? 'opacity-60 ring-2 ring-ring ring-offset-1 ring-offset-background' : ''
                     }`}
